@@ -362,6 +362,27 @@ select.inp option{background:var(--bg);}
   </div>
 </div>
 
+<!-- ADD CHECKLIST ITEM MODAL -->
+<div class="modal-bg gone" id="add-hab-modal">
+  <div class="modal">
+    <button class="mclose" onclick="closeModal('add-hab-modal')">×</button>
+    <div class="modal-title">Новый пункт</div>
+    <div class="mrow">
+      <input class="inp" type="text" id="add-hab-icon" placeholder="Иконка" maxlength="4" style="max-width:60px;text-align:center;font-size:20px;">
+      <input class="inp" type="text" id="add-hab-name" placeholder="Название..." maxlength="40" style="flex:1;">
+    </div>
+    <div class="mrow">
+      <select class="inp" id="add-hab-after" style="flex:1;font-size:13px;">
+        <option value="">В конце списка</option>
+      </select>
+    </div>
+    <div class="mrow" style="gap:8px;">
+      <button class="mbtn" onclick="closeModal('add-hab-modal')" style="flex:1;background:var(--bg2);color:var(--text);">Отмена</button>
+      <button class="mbtn green" onclick="addCustomHab()" style="flex:1;">Добавить</button>
+    </div>
+  </div>
+</div>
+
 <!-- HABIT EDIT MODAL -->
 <div class="modal-bg gone" id="hab-edit-modal">
   <div class="modal">
@@ -610,7 +631,10 @@ select.inp option{background:var(--bg);}
         <div class="dscore-l">выполнено</div>
       </div>
     </div>
-    <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Привычки</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;">Чек-лист</div>
+      <button onclick="openAddHab()" style="background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:2px 6px;">+ Добавить</button>
+    </div>
     <div id="hab-list"></div>
     <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px;">Задачи</div>
     <div id="task-list"></div>
@@ -1039,8 +1063,13 @@ function initG(){
     habitNames:{},
     habitTimes:{},
     habitNotifs:{},
+    customHabs:[],   // [{id,name,icon,after}] — custom items, after=hab id to insert after
+    hiddenHabs:[],   // base hab ids the user deleted
     ws:'',ms:''
   };
+  // Ensure fields exist on upgrade
+  if(!S.g.customHabs)S.g.customHabs=[];
+  if(!S.g.hiddenHabs)S.g.hiddenHabs=[];
 }
 
 function dk(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toISOString().slice(0,10);}
@@ -1153,6 +1182,46 @@ function delTask(tid){
   const t=d.tasks.find(x=>x.id===tid);
   if(t&&t.done&&t.linkId){const g=S.g.week.find(x=>x.id===t.linkId);if(g&&g.current>0)g.current--;}
   d.tasks=d.tasks.filter(x=>x.id!==tid);
+  saveS();renderGoals();
+}
+
+function openAddHab(){
+  if(!S.g)initG();
+  // Populate the "insert after" dropdown with visible base + custom items
+  const hidden=S.g.hiddenHabs||[];
+  const custom=S.g.customHabs||[];
+  const sel=document.getElementById('add-hab-after');
+  let opts='<option value="">В конце списка</option>';
+  HAB.filter(h=>!hidden.includes(h.id)).forEach(h=>{
+    const name=S.g.habitNames?.[h.id]||h.name;
+    opts+='<option value="'+h.id+'">После: '+name+'</option>';
+    custom.filter(c=>c.after===h.id).forEach(c=>{
+      opts+='<option value="'+c.id+'">После: '+c.name+'</option>';
+    });
+  });
+  sel.innerHTML=opts;
+  document.getElementById('add-hab-icon').value='⭐';
+  document.getElementById('add-hab-name').value='';
+  openModal('add-hab-modal');
+}
+
+function addCustomHab(){
+  const icon=document.getElementById('add-hab-icon').value.trim()||'⭐';
+  const name=document.getElementById('add-hab-name').value.trim();
+  if(!name)return;
+  const after=document.getElementById('add-hab-after').value;
+  if(!S.g.customHabs)S.g.customHabs=[];
+  const id='c'+(Date.now()%1e8);
+  S.g.customHabs.push({id,icon,name,after});
+  closeModal('add-hab-modal');
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+function delCustomHab(id){
+  S.g.customHabs=(S.g.customHabs||[]).filter(c=>c.id!==id);
+  // Also clean up any day data
+  Object.values(S.g.days).forEach(d=>{delete d.habs[id];});
   saveS();renderGoals();
 }
 
@@ -1303,23 +1372,43 @@ function renderGoals(){
 
   const day=ensD(vk);
 
-  let habHtml='';
-  HAB.forEach(h=>{
-    const done=!!day.habs[h.id];
-    const streak=dv==='today'&&done?getStreak(h.id):0;
-    const link=findHabitLink(h.id);
-    const linkG=link?S.g.week.find(x=>x.id===link):null;
-    const customName=S.g.habitNames?.[h.id]||h.name;
-    const customTime=S.g.habitTimes?.[h.id]||'';
-    habHtml+='<div class="ti" onclick="toggleHab(\''+h.id+'\')">'+
+  // Build merged ordered list: base (visible) + custom inserted after their anchor
+  const hidden=S.g.hiddenHabs||[];
+  const custom=S.g.customHabs||[];
+  function renderHabItem(id,icon,name,sub,done,streak,linkG,isCustom){
+    const customTime=S.g.habitTimes?.[id]||'';
+    return '<div class="ti" onclick="toggleHab(\''+id+'\')">'+
       '<div class="tchk'+(done?' done':'')+'"></div>'+
-      '<div style="font-size:18px;flex-shrink:0;">'+h.icon+'</div>'+
-      '<div class="tbody"><div class="tname'+(done?' x':'')+'">'+customName+'</div>'+
-      (customTime?'<div class="tsub" style="color:var(--accent);font-weight:500;">⏰ '+customTime+'</div>':
-        '<div class="tsub">'+h.sub+'</div>')+
+      '<div style="font-size:18px;flex-shrink:0;">'+icon+'</div>'+
+      '<div class="tbody"><div class="tname'+(done?' x':'')+'">'+name+'</div>'+
+      (customTime?'<div class="tsub" style="color:var(--accent);font-weight:500;">⏰ '+customTime+'</div>':'<div class="tsub">'+sub+'</div>')+
       (linkG?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;">→ '+linkG.name+'</div>':'')+
       '</div><div class="tright" style="display:flex;gap:2px;align-items:center;">'+(streak>=2?'<div class="tstreak">'+streak+'д</div>':'')+
-      '<button class="tedit" onclick="event.stopPropagation();openHabEdit(\''+h.id+'\')">✎</button></div></div>';
+      (isCustom
+        ?'<button class="tdel" onclick="event.stopPropagation();delCustomHab(\''+id+'\')" style="color:var(--red);font-size:16px;">×</button>'
+        :'<button class="tedit" onclick="event.stopPropagation();openHabEdit(\''+id+'\')">✎</button>'
+      )+
+      '</div></div>';
+  }
+  let habHtml='';
+  HAB.forEach(h=>{
+    if(hidden.includes(h.id))return;
+    const done=!!day.habs[h.id];
+    const streak=isToday&&done?getStreak(h.id):0;
+    const link=findHabitLink(h.id);
+    const linkG=link?S.g.week.find(x=>x.id===link):null;
+    const dispName=S.g.habitNames?.[h.id]||h.name;
+    habHtml+=renderHabItem(h.id,h.icon,dispName,h.sub,done,streak,linkG,false);
+    // Insert custom items anchored after this base item
+    custom.filter(c=>c.after===h.id).forEach(c=>{
+      const cd=!!day.habs[c.id];
+      habHtml+=renderHabItem(c.id,c.icon,c.name,'',cd,0,null,true);
+    });
+  });
+  // Custom items with no anchor (after='') go at end
+  custom.filter(c=>!c.after).forEach(c=>{
+    const cd=!!day.habs[c.id];
+    habHtml+=renderHabItem(c.id,c.icon,c.name,'',cd,0,null,true);
   });
   document.getElementById('hab-list').innerHTML=habHtml;
 
@@ -1340,9 +1429,11 @@ function renderGoals(){
     '<option value="'+g.id+'" style="color:'+g.color+'">→ '+g.name+'</option>'
   ).join('');
 
-  const hDone=HAB.filter(h=>!!day.habs[h.id]).length;
+  const visibleBase=HAB.filter(h=>!hidden.includes(h.id));
+  const hDone=visibleBase.filter(h=>!!day.habs[h.id]).length
+    + custom.filter(c=>!!day.habs[c.id]).length;
   const tDone=day.tasks.filter(t=>t.done).length;
-  const total=HAB.length+day.tasks.length;
+  const total=visibleBase.length+custom.length+day.tasks.length;
   const sc=document.getElementById('d-score');
   sc.textContent=(hDone+tDone)+'/'+total;
   sc.style.color=(hDone+tDone)===total&&total>0?'var(--green)':'var(--accent)';
