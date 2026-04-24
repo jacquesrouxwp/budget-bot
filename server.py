@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 BOT_TOKEN  = os.getenv("BOT_TOKEN", "")
 WEBHOOK_PATH = "/webhook/" + BOT_TOKEN  # secret path
-DB_PATH    = os.getenv("DB_PATH", "budget.db")
+DB_PATH    = os.getenv("DB_PATH", "/data/budget.db" if os.path.isdir("/data") else "budget.db")
 
 app = FastAPI(title="Budget Bot API", docs_url=None, redoc_url=None)
 app.add_middleware(
