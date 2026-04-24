@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Мой бюджет</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{
+  --bg:var(--tg-theme-bg-color,#ffffff);
+  --bg2:var(--tg-theme-secondary-bg-color,#f2f2f7);
+  --text:var(--tg-theme-text-color,#111);
+  --hint:var(--tg-theme-hint-color,#888);
+  --accent:var(--tg-theme-button-color,#378ADD);
+  --accent-t:var(--tg-theme-button-text-color,#fff);
+  --red:#E24B4A;--green:#1D9E75;--purple:#7F77DD;--amber:#EF9F27;
+  --r:18px;--rsm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px;font-size:15px;}
+
+/* OVERLAY */
+.overlay{position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;padding:36px 24px 28px;overflow-y:auto;}
+.overlay.gone{display:none;}
+
+/* QUOTE */
+.q-eyebrow{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--hint);margin-bottom:20px;}
+.q-text{font-size:21px;font-weight:700;line-height:1.35;margin-bottom:10px;}
+.q-author{font-size:13px;color:var(--hint);margin-bottom:0;}
+.q-rule{border:none;border-top:1px solid rgba(128,128,128,.15);margin:20px 0;}
+.q-ctx{font-size:14px;color:var(--text);opacity:.68;line-height:1.6;margin-bottom:32px;}
+.q-cta{background:var(--text);color:var(--bg);border:none;border-radius:var(--rsm);padding:15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;}
+.q-cta:active{opacity:.8;}
+.q-pg{font-size:11px;color:var(--hint);text-align:center;margin-top:12px;}
+
+/* ONBOARD */
+.ob-title{font-size:26px;font-weight:800;margin-bottom:6px;}
+.ob-sub{font-size:14px;color:var(--hint);margin-bottom:30px;line-height:1.5;}
+.ob-group{margin-bottom:18px;}
+.ob-label{font-size:12px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;}
+.ob-note{font-size:12px;color:var(--hint);margin-top:5px;}
+input.big{background:var(--bg2);border:none;border-radius:var(--rsm);padding:14px;font-size:18px;font-weight:600;color:var(--text);font-family:inherit;outline:none;width:100%;-webkit-appearance:none;}
+input.big::placeholder{color:rgba(128,128,128,.5);font-weight:400;}
+input.big:focus{box-shadow:0 0 0 2px var(--accent);}
+.ob-cta{background:var(--accent);color:var(--accent-t);border:none;border-radius:var(--rsm);padding:15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;margin-top:10px;}
+
+/* NAV */
+.nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:.5px solid rgba(128,128,128,.18);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0);}
+.nb{flex:1;padding:10px 4px 9px;background:none;border:none;font-size:10px;color:var(--hint);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-family:inherit;}
+.nb.on{color:var(--accent);}
+.ni{font-size:22px;line-height:1;}
+
+/* SCREENS */
+.screen{display:none;padding:16px;}
+.screen.on{display:block;}
+
+/* HERO */
+.hero{border-radius:var(--r);padding:22px 20px;color:#fff;margin-bottom:14px;position:relative;overflow:hidden;}
+.hero::after{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.07);}
+.hero.blue{background:var(--accent);}
+.hero.green{background:var(--green);}
+.hero.red{background:var(--red);}
+.hero-eyebrow{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+.hero-num{font-size:52px;font-weight:800;letter-spacing:-2px;line-height:1;}
+.hero-unit{font-size:22px;font-weight:400;opacity:.75;}
+.hero-sub{font-size:13px;opacity:.7;margin-top:8px;line-height:1.4;}
+.hero-track{height:4px;background:rgba(255,255,255,.22);border-radius:2px;margin-top:16px;overflow:hidden;}
+.hero-fill{height:100%;border-radius:2px;background:rgba(255,255,255,.8);transition:width .5s;}
+
+/* COUNTDOWN */
+.cd{background:var(--bg2);border-radius:var(--rsm);padding:14px 16px;display:flex;align-items:center;gap:14px;margin-bottom:12px;}
+.cd-n{font-size:40px;font-weight:800;color:var(--accent);line-height:1;min-width:52px;}
+.cd-title{font-size:14px;font-weight:600;}
+.cd-sub{font-size:12px;color:var(--hint);margin-top:2px;}
+.cd-tag{font-size:11px;padding:3px 9px;border-radius:99px;background:rgba(239,159,39,.15);color:#854F0B;margin-top:5px;display:inline-block;}
+
+/* QUOTE STRIP */
+.qstrip{background:var(--bg2);border-radius:var(--rsm);padding:12px 14px;border-left:3px solid var(--accent);margin-bottom:14px;}
+.qs-text{font-size:13px;font-weight:600;line-height:1.4;}
+.qs-author{font-size:11px;color:var(--hint);margin-top:4px;}
+
+/* CARDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;}
+.card{background:var(--bg2);border-radius:var(--rsm);padding:14px 12px;}
+.c-label{font-size:11px;color:var(--hint);margin-bottom:4px;}
+.c-val{font-size:19px;font-weight:700;}
+.c-val-sm{font-size:15px;font-weight:700;}
+.c-sub{font-size:11px;color:var(--hint);margin-top:2px;}
+.c-bar{height:3px;background:rgba(128,128,128,.15);border-radius:2px;margin-top:8px;overflow:hidden;}
+.c-fill{height:100%;border-radius:2px;transition:width .4s;}
+
+/* SEC HEADER */
+.sec{font-size:12px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.07em;margin:18px 0 10px;}
+
+/* BIG ACTION BUTTONS */
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+.act-btn{border:none;border-radius:var(--r);padding:18px 12px;font-family:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:opacity .15s;}
+.act-btn:active{opacity:.8;transform:scale(.97);}
+.act-spent{background:rgba(226,75,74,.1);color:var(--red);}
+.act-income{background:rgba(29,158,117,.1);color:var(--green);}
+.act-icon{font-size:28px;line-height:1;}
+.act-label{font-size:14px;font-weight:700;}
+.act-sub{font-size:11px;opacity:.7;}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-end;}
+.modal-bg.gone{display:none;}
+.modal{background:var(--bg);border-radius:24px 24px 0 0;padding:20px 20px 36px;width:100%;}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:18px;}
+.mrow{display:flex;gap:8px;margin-bottom:10px;}
+.mrow:last-child{margin-bottom:0;}
+input.inp,select.inp{background:var(--bg2);border:none;border-radius:var(--rsm);padding:13px;font-size:16px;color:var(--text);font-family:inherit;outline:none;width:100%;-webkit-appearance:none;}
+input.inp::placeholder{color:var(--hint);}
+input.inp:focus,select.inp:focus{box-shadow:0 0 0 2px var(--accent);}
+select.inp option{background:var(--bg);}
+.mbtn{border:none;border-radius:var(--rsm);padding:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
+.mbtn.red{background:var(--red);color:#fff;}
+.mbtn.green{background:var(--green);color:#fff;}
+.mbtn.full{width:100%;}
+.mbtn:active{opacity:.8;}
+.mclose{background:none;border:none;font-size:22px;color:var(--hint);cursor:pointer;float:right;padding:0;}
+
+/* TX LIST */
+.tx{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:.5px solid rgba(128,128,128,.1);}
+.tx:last-child{border-bottom:none;}
+.tx-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.tx-dot.income-dot{border-radius:2px;}
+.tx-body{flex:1;min-width:0;}
+.tx-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tx-meta{font-size:12px;color:var(--hint);margin-top:1px;}
+.tx-amt{font-size:15px;font-weight:700;}
+.tx-amt.plus{color:var(--green);}
+.tx-del{background:none;border:none;font-size:20px;color:rgba(128,128,128,.35);cursor:pointer;padding:0 4px;}
+
+/* ALLOC */
+.al{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:.5px solid rgba(128,128,128,.1);}
+.al:last-child{border-bottom:none;}
+.al-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.al-label{font-size:13px;flex:1;}
+.al-bw{width:80px;height:5px;background:rgba(128,128,128,.15);border-radius:3px;overflow:hidden;flex-shrink:0;}
+.al-b{height:100%;border-radius:3px;}
+.al-pct{font-size:11px;color:var(--hint);min-width:38px;text-align:right;}
+.al-amt{font-size:13px;font-weight:700;min-width:52px;text-align:right;}
+
+/* PHASE */
+.phase{border-left:3px solid;padding:10px 14px;border-radius:0 var(--rsm) var(--rsm) 0;background:var(--bg2);margin-bottom:8px;}
+.ph-title{font-size:12px;font-weight:700;margin-bottom:3px;}
+.ph-text{font-size:13px;}
+.ph-sub{font-size:12px;color:var(--hint);margin-top:2px;}
+
+/* NOTICE */
+.note{border-radius:var(--rsm);padding:10px 14px;font-size:13px;margin-bottom:10px;}
+.note.ok{background:rgba(29,158,117,.1);color:#0F6E56;}
+.note.warn{background:rgba(239,159,39,.1);color:#854F0B;}
+.note.bad{background:rgba(226,75,74,.08);color:#A32D2D;}
+
+/* CAL */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px;}
+.ch{text-align:center;font-size:10px;color:var(--hint);padding:2px 0;}
+.cd2{aspect-ratio:1;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg2);}
+.cd2.today{border:2px solid var(--accent);}
+.cd2.payday{border:2px solid var(--amber);}
+.cd2.payday .dn{color:var(--amber);}
+.cd2.payday .da{color:var(--amber)!important;}
+.cd2.spent{background:rgba(226,75,74,.1);}
+.cd2.got{background:rgba(29,158,117,.12);}
+.cd2.clean{background:rgba(128,128,128,.06);}
+.cd2.future{opacity:.3;}
+.cd2.out{opacity:.07;}
+.dn{font-size:12px;font-weight:700;}
+.da{font-size:9px;color:var(--hint);margin-top:1px;}
+.cd2.spent .da{color:var(--red);}
+.cd2.got .da{color:var(--green);}
+
+.chart-wrap{position:relative;width:100%;height:170px;margin-bottom:8px;}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--hint);}
+.ldot{width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0;}
+
+.debt-block{background:var(--bg2);border-radius:var(--r);padding:18px 18px 20px;margin-bottom:14px;}
+.debt-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
+.debt-label{font-size:12px;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.debt-remain{font-size:28px;font-weight:800;letter-spacing:-1px;}
+.debt-remain sup{font-size:15px;font-weight:400;opacity:.6;}
+.debt-pct-big{font-size:44px;font-weight:800;letter-spacing:-2px;color:var(--red);line-height:1;text-align:right;}
+.debt-pct-big.mid{color:var(--amber);}
+.debt-pct-big.hi{color:var(--green);}
+.debt-track{height:18px;background:rgba(128,128,128,.12);border-radius:99px;overflow:hidden;margin-bottom:8px;position:relative;}
+.debt-fill{height:100%;border-radius:99px;background:var(--red);transition:width .9s cubic-bezier(.4,0,.2,1);}
+.debt-fill.mid{background:var(--amber);}
+.debt-fill.hi{background:var(--green);}
+.debt-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.18) 0%,transparent 60%);}
+.debt-marks{display:flex;justify-content:space-between;margin-bottom:14px;}
+.debt-mark{font-size:10px;color:var(--hint);text-align:center;}
+.debt-mark.done{color:var(--green);font-weight:700;}
+.debt-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;}
+.dst{background:var(--bg);border-radius:var(--rsm);padding:10px 8px;text-align:center;}
+.dst-val{font-size:15px;font-weight:700;}
+.dst-lbl{font-size:10px;color:var(--hint);margin-top:2px;}
+.debt-motto{font-size:12px;color:var(--hint);text-align:center;line-height:1.55;padding-top:12px;border-top:.5px solid rgba(128,128,128,.1);}
+.debt-motto b{color:var(--text);}
+
+/* ── GOALS ── */
+.dtab{display:flex;gap:6px;margin-bottom:14px;}
+.dtab button{flex:1;padding:10px;border:none;border-radius:var(--rsm);background:var(--bg2);font-size:13px;font-weight:600;color:var(--hint);cursor:pointer;text-align:center;font-family:inherit;}
+.dtab button.on{background:var(--accent);color:var(--accent-t);}
+.dblock{background:var(--bg2);border-radius:var(--r);padding:16px;margin-bottom:12px;}
+.dhdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.dtitle{font-size:18px;font-weight:700;}
+.dscore{text-align:right;}
+.dscore-n{font-size:30px;font-weight:800;line-height:1;}
+.dscore-l{font-size:10px;color:var(--hint);margin-top:2px;}
+.ti{display:flex;align-items:flex-start;gap:11px;padding:10px 0;border-bottom:.5px solid rgba(128,128,128,.08);cursor:pointer;user-select:none;}
+.ti:last-child{border-bottom:none;}
+.ti:active{opacity:.7;}
+.tchk{width:24px;height:24px;border-radius:7px;border:2px solid rgba(128,128,128,.25);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;transition:all .12s;}
+.tchk.done{background:var(--green);border-color:var(--green);}
+.tchk.done::after{content:'✓';color:#fff;font-size:13px;font-weight:700;}
+.tbody{flex:1;min-width:0;}
+.tname{font-size:14px;font-weight:500;}
+.tname.x{text-decoration:line-through;opacity:.4;}
+.tsub{font-size:11px;color:var(--hint);margin-top:2px;}
+.tlink{font-size:10px;padding:2px 7px;border-radius:99px;font-weight:600;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;display:inline-block;}
+.tright{display:flex;align-items:center;gap:5px;flex-shrink:0;}
+.tstreak{font-size:10px;font-weight:700;color:var(--amber);padding:2px 7px;background:rgba(239,159,39,.12);border-radius:99px;}
+.tdel{background:none;border:none;font-size:18px;color:rgba(128,128,128,.25);cursor:pointer;padding:0 2px;}
+.addstrip{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:.5px solid rgba(128,128,128,.08);}
+.wdots{display:flex;gap:4px;margin-bottom:16px;justify-content:space-between;}
+.wd{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;}
+.wd-l{font-size:10px;color:var(--hint);}
+.wd-c{width:28px;height:28px;border-radius:50%;background:var(--bg);border:2px solid rgba(128,128,128,.12);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--hint);}
+.wd-c.today{border-color:var(--accent);color:var(--accent);}
+.wd-c.full{background:var(--green);border-color:var(--green);color:#fff;}
+.wd-c.part{background:rgba(239,159,39,.12);border-color:var(--amber);color:var(--amber);}
+.wd-c.fut{opacity:.3;}
+.stabs{display:flex;gap:5px;margin-bottom:14px;}
+.stab{flex:1;padding:8px;border:none;border-radius:var(--rsm);background:var(--bg2);font-size:12px;font-weight:600;color:var(--hint);cursor:pointer;text-align:center;font-family:inherit;}
+.stab.on{background:var(--text);color:var(--bg);}
+.gc{background:var(--bg2);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;}
+.gc-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.gc-name{font-size:14px;font-weight:700;flex:1;padding-right:8px;}
+.gc-pct{font-size:22px;font-weight:800;line-height:1;}
+.gc-trk{height:12px;background:rgba(128,128,128,.1);border-radius:99px;overflow:hidden;margin-bottom:5px;}
+.gc-fill{height:100%;border-radius:99px;transition:width .7s cubic-bezier(.4,0,.2,1);}
+.gc-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--hint);}
+.gc-btns{display:flex;gap:6px;margin-top:8px;align-items:center;}
+.gc-children{margin-top:8px;padding-top:8px;border-top:.5px solid rgba(128,128,128,.1);}
+.gc-child{font-size:12px;color:var(--hint);display:flex;align-items:center;gap:6px;padding:3px 0;}
+.gc-child-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.gc-child-pct{font-weight:700;min-width:28px;}
+.ap{background:var(--bg);border:1px solid rgba(128,128,128,.1);border-radius:var(--rsm);padding:12px;margin-bottom:10px;}
+.ap.gone{display:none;}
+.apr{display:flex;gap:8px;margin-bottom:8px;}
+.apr:last-child{margin-bottom:0;}
+.nogoal{background:rgba(239,159,39,.08);border-radius:var(--rsm);padding:10px 12px;font-size:12px;color:#854F0B;text-align:center;margin-bottom:10px;}
+.sr{background:var(--bg2);border-radius:var(--rsm);padding:14px;margin-bottom:8px;}
+.sl{font-size:12px;color:var(--hint);margin-bottom:7px;font-weight:500;}
+.sf{display:flex;gap:8px;}
+.empty{text-align:center;padding:28px 0;color:var(--hint);font-size:14px;}
+
+/* sync indicator */
+#sync-dot{position:fixed;top:10px;right:14px;width:7px;height:7px;border-radius:50%;background:var(--green);z-index:400;opacity:0;transition:opacity .3s;}
+#sync-dot.saving{background:var(--amber);opacity:1;}
+#sync-dot.error{background:var(--red);opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="sync-dot"></div>
+
+<!-- QUOTE SPLASH -->
+<div class="overlay" id="splash">
+  <div class="q-eyebrow">Совет дня · Личный консультант</div>
+  <div class="q-text" id="q-text"></div>
+  <div class="q-author" id="q-author"></div>
+  <hr class="q-rule">
+  <div class="q-ctx" id="q-ctx"></div>
+  <button class="q-cta" onclick="closeSplash()">Понял. Работаем.</button>
+  <div class="q-pg" id="q-pg"></div>
+</div>
+
+<!-- ONBOARDING -->
+<div class="overlay gone" id="onboard">
+  <div class="ob-title">Стартовые данные</div>
+  <div class="ob-sub">Введи один раз — приложение всё запомнит и пересчитает само.</div>
+  <div class="ob-group">
+    <div class="ob-label">Остаток на карте прямо сейчас (€)</div>
+    <input class="big" type="number" id="ob-card" placeholder="358" min="0" step="0.01">
+    <div class="ob-note">Сколько сейчас на карте до 25 апреля</div>
+  </div>
+  <div class="ob-group">
+    <div class="ob-label">В DeFi стейблах (€)</div>
+    <input class="big" type="number" id="ob-defi" placeholder="0" min="0" step="0.01">
+  </div>
+  <div class="ob-group">
+    <div class="ob-label">Остаток долга (€)</div>
+    <input class="big" type="number" id="ob-debt" placeholder="15000" min="0">
+  </div>
+  <div class="ob-group">
+    <div class="ob-label">Подушка уже есть (€)</div>
+    <input class="big" type="number" id="ob-cush" placeholder="0" min="0">
+  </div>
+  <button class="ob-cta" onclick="saveOnboard()">Сохранить и начать →</button>
+</div>
+
+<!-- EXPENSE MODAL -->
+<div class="modal-bg gone" id="exp-modal">
+  <div class="modal">
+    <button class="mclose" onclick="closeModal('exp-modal')">×</button>
+    <div class="modal-title">Потратил</div>
+    <div class="mrow">
+      <input class="inp" type="number" id="e-amt" placeholder="Сумма €" min="0" step="0.5" style="max-width:110px;">
+      <select class="inp" id="e-cat" style="flex:1;">
+        <option value="food">Еда</option>
+        <option value="transport">Транспорт</option>
+        <option value="gym">Качалка</option>
+        <option value="health">Здоровье</option>
+        <option value="other">Прочее</option>
+      </select>
+    </div>
+    <div class="mrow">
+      <input class="inp" type="text" id="e-note" placeholder="Заметка..." maxlength="50" style="flex:1;">
+      <input class="inp" type="date" id="e-date" style="max-width:140px;">
+    </div>
+    <div class="mrow"><button class="mbtn red full" onclick="addExpense()">− Записать расход</button></div>
+  </div>
+</div>
+
+<!-- INCOME MODAL -->
+<div class="modal-bg gone" id="inc-modal">
+  <div class="modal">
+    <button class="mclose" onclick="closeModal('inc-modal')">×</button>
+    <div class="modal-title">Получил</div>
+    <div class="mrow">
+      <input class="inp" type="number" id="i-amt" placeholder="Сумма €" min="0" step="0.5" style="max-width:110px;">
+      <select class="inp" id="i-cat" style="flex:1;">
+        <option value="tips">Чаевые</option>
+        <option value="extra">Подработка</option>
+        <option value="bonus">Бонус</option>
+        <option value="other">Прочее</option>
+      </select>
+    </div>
+    <div class="mrow">
+      <input class="inp" type="text" id="i-note" placeholder="Заметка..." maxlength="50" style="flex:1;">
+      <input class="inp" type="date" id="i-date" style="max-width:140px;">
+    </div>
+    <div class="mrow"><button class="mbtn green full" onclick="addIncome()">+ Записать приход</button></div>
+  </div>
+</div>
+
+<!-- HOME -->
+<div class="screen on" id="screen-home">
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Личный бюджет</div>
+    <div style="font-size:22px;font-weight:700;" id="h-month">–</div>
+    <div style="font-size:13px;color:var(--hint);margin-top:2px;" id="h-cycle">–</div>
+  </div>
+
+  <div class="cd">
+    <div class="cd-n" id="cd-n">5</div>
+    <div>
+      <div class="cd-title" id="cd-title">дней до зарплаты</div>
+      <div class="cd-sub" id="cd-sub">25 апреля · +2 000 €</div>
+      <div class="cd-tag" id="cd-tag">5 € в день · держись</div>
+    </div>
+  </div>
+
+  <div class="qstrip">
+    <div class="qs-text" id="qs-text"></div>
+    <div class="qs-author" id="qs-author"></div>
+  </div>
+
+  <div class="hero blue" id="hero">
+    <div class="hero-eyebrow">Доступно сейчас</div>
+    <div><span class="hero-num" id="h-avail">–</span><span class="hero-unit"> €</span></div>
+    <div class="hero-sub" id="h-sub">–</div>
+    <div class="hero-track"><div class="hero-fill" id="h-fill" style="width:50%"></div></div>
+  </div>
+
+  <div class="actions">
+    <button class="act-btn act-spent" onclick="openModal('exp-modal')">
+      <div class="act-icon">−</div>
+      <div class="act-label">Потратил</div>
+      <div class="act-sub">расход</div>
+    </button>
+    <button class="act-btn act-income" onclick="openModal('inc-modal')">
+      <div class="act-icon">+</div>
+      <div class="act-label">Получил</div>
+      <div class="act-sub">чаевые / доп</div>
+    </button>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="c-label">Карта прямо сейчас</div>
+      <div class="c-val" id="s-card">– €</div>
+      <div class="c-sub" id="s-card-sub">остаток</div>
+      <div class="c-bar"><div class="c-fill" id="s-card-fill" style="width:60%;background:var(--green)"></div></div>
+    </div>
+    <div class="card">
+      <div class="c-label">Доп. доход цикла</div>
+      <div class="c-val" id="s-income">0 €</div>
+      <div class="c-sub" id="s-income-sub">чаевые / прочее</div>
+      <div class="c-bar"><div class="c-fill" id="s-income-fill" style="width:0%;background:var(--green)"></div></div>
+    </div>
+  </div>
+
+  <div class="g3">
+    <div class="card">
+      <div class="c-label">Долг</div>
+      <div class="c-val-sm" id="s-debt">–</div>
+      <div class="c-bar"><div class="c-fill" id="s-debt-fill" style="width:0%;background:var(--red)"></div></div>
+      <div class="c-sub" id="s-debt-pct">–</div>
+    </div>
+    <div class="card">
+      <div class="c-label">Подушка</div>
+      <div class="c-val-sm" id="s-cush">–</div>
+      <div class="c-bar"><div class="c-fill" id="s-cush-fill" style="width:0%;background:var(--green)"></div></div>
+      <div class="c-sub" id="s-cush-sub">–</div>
+    </div>
+    <div class="card">
+      <div class="c-label">DeFi</div>
+      <div class="c-val-sm" id="s-defi">–</div>
+      <div class="c-bar"><div class="c-fill" id="s-defi-fill" style="width:0%;background:var(--purple)"></div></div>
+      <div class="c-sub">стейблы</div>
+    </div>
+  </div>
+
+  <div class="sec">Прогресс погашения долга</div>
+  <div class="debt-block">
+    <div class="debt-top">
+      <div>
+        <div class="debt-label">Осталось отдать</div>
+        <div class="debt-remain" id="dp-remain">–</div>
+        <div style="font-size:12px;color:var(--hint);margin-top:3px;" id="dp-paid-of">из 15 000 €</div>
+      </div>
+      <div>
+        <div class="debt-pct-big" id="dp-pct">0%</div>
+        <div class="debt-pct-note">закрыто</div>
+      </div>
+    </div>
+    <div class="debt-track"><div class="debt-fill" id="dp-fill" style="width:0%"></div></div>
+    <div class="debt-marks">
+      <div class="debt-mark" id="dm0">Старт</div>
+      <div class="debt-mark" id="dm25">25%</div>
+      <div class="debt-mark" id="dm50">50%</div>
+      <div class="debt-mark" id="dm75">75%</div>
+      <div class="debt-mark" id="dm100">Свобода</div>
+    </div>
+    <div class="debt-stats">
+      <div class="dst"><div class="dst-val" id="dp-paid-amt">0 €</div><div class="dst-lbl">выплачено</div></div>
+      <div class="dst"><div class="dst-val" id="dp-monthly">500 €</div><div class="dst-lbl">мин / мес</div></div>
+      <div class="dst"><div class="dst-val" id="dp-eta">– мес</div><div class="dst-lbl">до закрытия</div></div>
+    </div>
+    <div class="debt-motto" id="dp-motto"></div>
+  </div>
+
+  <div class="sec">История цикла</div>
+  <div id="home-tx"></div>
+</div>
+
+<!-- CALENDAR -->
+<div class="screen" id="screen-cal">
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Календарь</div>
+    <div style="font-size:22px;font-weight:700;" id="cal-title">–</div>
+  </div>
+  <div class="note" id="cal-note">–</div>
+  <div class="cal-grid" id="cal-hdr"></div>
+  <div class="cal-grid" id="cal-grid"></div>
+  <div class="legend" style="margin:10px 0 20px;">
+    <span style="display:flex;align-items:center;gap:4px;"><span class="ldot" style="background:var(--red);opacity:.5;"></span>Расход</span>
+    <span style="display:flex;align-items:center;gap:4px;"><span class="ldot" style="background:var(--green);opacity:.5;"></span>Доход</span>
+    <span style="display:flex;align-items:center;gap:4px;"><span class="ldot" style="border:2px solid var(--amber);background:transparent;width:10px;height:10px;border-radius:2px;"></span>25-е · зарплата</span>
+    <span style="display:flex;align-items:center;gap:4px;"><span class="ldot" style="border:2px solid var(--accent);background:transparent;width:10px;height:10px;border-radius:2px;"></span>Сегодня</span>
+  </div>
+  <div class="sec">Движение по дням</div>
+  <div class="chart-wrap">
+    <canvas id="chart" role="img" aria-label="Расходы и доходы по дням цикла"></canvas>
+  </div>
+</div>
+
+<!-- PLAN -->
+<div class="screen" id="screen-plan">
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Стратегия</div>
+    <div style="font-size:22px;font-weight:700;">Куда уходят 2 000 €</div>
+  </div>
+
+  <div class="note warn">Зарплата 2 200 € · минус 220 € десятина = 2 000 € рабочий бюджет</div>
+
+  <div class="sec">Расклад каждого месяца</div>
+  <div style="background:var(--bg2);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;">
+    <div class="al"><div class="al-dot" style="background:#E24B4A;"></div><div class="al-label">Аренда</div><div class="al-bw"><div class="al-b" style="width:100%;background:#E24B4A;"></div></div><div class="al-pct">40%</div><div class="al-amt">800 €</div></div>
+    <div class="al"><div class="al-dot" style="background:#E24B4A;"></div><div class="al-label">Долг (мин. платёж)</div><div class="al-bw"><div class="al-b" style="width:62%;background:#E24B4A;"></div></div><div class="al-pct">25%</div><div class="al-amt">500 €</div></div>
+    <div class="al"><div class="al-dot" style="background:#1D9E75;"></div><div class="al-label">Подушка / доп. долг</div><div class="al-bw"><div class="al-b" style="width:39%;background:#1D9E75;"></div></div><div class="al-pct">15.8%</div><div class="al-amt">315 €</div></div>
+    <div class="al"><div class="al-dot" style="background:#378ADD;"></div><div class="al-label">Еда / личное (5 €/д)</div><div class="al-bw"><div class="al-b" style="width:19%;background:#378ADD;"></div></div><div class="al-pct">7.5%</div><div class="al-amt">150 €</div></div>
+    <div class="al"><div class="al-dot" style="background:#888780;"></div><div class="al-label">Транспорт</div><div class="al-bw"><div class="al-b" style="width:12.5%;background:#888780;"></div></div><div class="al-pct">5%</div><div class="al-amt">100 €</div></div>
+    <div class="al"><div class="al-dot" style="background:#7F77DD;"></div><div class="al-label">DeFi стейблы</div><div class="al-bw"><div class="al-b" style="width:9.4%;background:#7F77DD;"></div></div><div class="al-pct">3.75%</div><div class="al-amt">75 €</div></div>
+    <div class="al"><div class="al-dot" style="background:#888780;"></div><div class="al-label">Качалка</div><div class="al-bw"><div class="al-b" style="width:7.5%;background:#888780;"></div></div><div class="al-pct">3%</div><div class="al-amt">60 €</div></div>
+    <div class="al" style="border-top:.5px solid rgba(128,128,128,.2);margin-top:4px;padding-top:12px;">
+      <div class="al-dot" style="background:transparent;"></div><div class="al-label" style="font-weight:700;">Итого</div>
+      <div class="al-bw"></div><div class="al-pct" style="font-weight:700;">100%</div><div class="al-amt" style="font-weight:700;">2 000 €</div>
+    </div>
+  </div>
+
+  <div class="note ok">Чаевые и подработки → автоматически в личный пул. Остаток в конце цикла → подушка.</div>
+
+  <div class="sec">Три фазы к свободе</div>
+  <div class="phase" style="border-color:var(--green);">
+    <div class="ph-title" style="color:var(--green);">Фаза 1 · ~5 мес · апр → сент 2026</div>
+    <div class="ph-text">315 € / мес → подушка 1 500 €</div>
+    <div class="ph-sub">Долг: только минимум 500 € / мес</div>
+  </div>
+  <div class="phase" style="border-color:var(--accent);">
+    <div class="ph-title" style="color:var(--accent);">Фаза 2 · ~15 мес · окт 2026 → дек 2027</div>
+    <div class="ph-text">815 € / мес на долг (500 + 315)</div>
+    <div class="ph-sub">~12 500 € / 815 ≈ 15 месяцев</div>
+  </div>
+  <div class="phase" style="border-color:var(--purple);">
+    <div class="ph-title" style="color:var(--purple);">Фаза 3 · с января 2028</div>
+    <div class="ph-text">Долг закрыт · 815 € / мес — твои</div>
+    <div class="ph-sub">Hylo дроп = внеплановый ускоритель в любой момент</div>
+  </div>
+  <div class="note warn" style="margin-top:12px;">Каждый чистый день без траты = +5 € к подушке. Каждые чаевые — ускоритель.</div>
+</div>
+
+<!-- SETTINGS -->
+<div class="screen" id="screen-settings">
+  <div style="margin-bottom:16px;">
+    <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Данные</div>
+    <div style="font-size:22px;font-weight:700;">Управление</div>
+  </div>
+  <div class="sr"><div class="sl">Остаток долга (€)</div><div class="sf"><input class="inp" type="number" id="sd" placeholder="15000" min="0"><button class="mbtn green" onclick="saveDebt()" style="padding:13px 16px;">OK</button></div></div>
+  <div class="sr"><div class="sl">Подушка (€)</div><div class="sf"><input class="inp" type="number" id="sc" placeholder="0" min="0"><button class="mbtn green" onclick="saveCush()" style="padding:13px 16px;">OK</button></div></div>
+  <div class="sr"><div class="sl">DeFi баланс (€)</div><div class="sf"><input class="inp" type="number" id="sdf" placeholder="0" min="0"><button class="mbtn green" onclick="saveDefi()" style="padding:13px 16px;">OK</button></div></div>
+  <div class="sr"><div class="sl">Остаток на карте (€)</div><div class="sf"><input class="inp" type="number" id="scard" placeholder="358" min="0"><button class="mbtn green" onclick="saveCard()" style="padding:13px 16px;">OK</button></div></div>
+  <div class="sec">Все операции</div>
+  <div id="all-tx"></div>
+  <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px;">
+    <button class="mbtn full" style="background:rgba(226,75,74,.1);color:var(--red);" onclick="clearAll()">Очистить все расходы</button>
+    <button class="mbtn full" style="background:var(--bg2);color:var(--hint);" onclick="resetOb()">Сбросить стартовые данные</button>
+  </div>
+</div>
+
+<!-- GOALS -->
+<div class="screen" id="screen-goals">
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Планирование</div>
+    <div style="font-size:22px;font-weight:700;" id="g-title">Сегодня</div>
+  </div>
+
+  <div class="dtab">
+    <button class="on" onclick="setDay('today',this)">Сегодня</button>
+    <button onclick="setDay('tomorrow',this)">Завтра</button>
+  </div>
+
+  <div class="dblock" id="dblock">
+    <div class="dhdr">
+      <div>
+        <div class="dtitle" id="d-inner-title">Чеклист</div>
+        <div style="font-size:12px;color:var(--hint);margin-top:2px;" id="d-date">–</div>
+      </div>
+      <div class="dscore">
+        <div class="dscore-n" id="d-score">0/0</div>
+        <div class="dscore-l">выполнено</div>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Привычки</div>
+    <div id="hab-list"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px;">Задачи</div>
+    <div id="task-list"></div>
+    <div class="addstrip">
+      <input class="inp" type="text" id="nt-name" placeholder="+ Задача..." maxlength="60" style="flex:1;padding:10px;" onkeydown="if(event.key==='Enter')addTask()">
+      <select class="inp" id="nt-link" style="max-width:120px;padding:10px;font-size:12px;">
+        <option value="">Без цели</option>
+      </select>
+      <button class="mbtn green" onclick="addTask()" style="padding:10px 14px;">+</button>
+    </div>
+  </div>
+
+  <div class="sec">Обзор недели</div>
+  <div class="wdots" id="wdots"></div>
+
+  <div class="stabs">
+    <button class="stab on" onclick="setScope('week',this)">Недельные</button>
+    <button class="stab" onclick="setScope('month',this)">Месячные</button>
+    <button class="stab" onclick="setScope('global',this)">Глобальные</button>
+  </div>
+
+  <div id="scope-list"></div>
+
+  <button class="mbtn" onclick="toggleAP()" id="ap-btn" style="background:var(--bg2);color:var(--text);border:none;width:100%;padding:12px;font-size:14px;font-weight:600;border-radius:var(--rsm);margin-bottom:8px;">+ Добавить цель</button>
+  <div class="ap gone" id="ap-form">
+    <div class="apr">
+      <input class="inp" type="text" id="ap-name" placeholder="Название..." maxlength="60" style="flex:1;">
+    </div>
+    <div class="apr">
+      <input class="inp" type="number" id="ap-target" placeholder="Цель (число)" min="1" style="flex:1;">
+      <input class="inp" type="text" id="ap-unit" placeholder="€/раз/км" style="max-width:90px;">
+    </div>
+    <div class="apr">
+      <select class="inp" id="ap-parent" style="flex:1;font-size:13px;">
+        <option value="">Привязать к...</option>
+      </select>
+      <button class="mbtn green" onclick="addGoal()" style="padding:10px 16px;">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <button class="nb on" onclick="goTo('home',this)"><span class="ni">◎</span>Главная</button>
+  <button class="nb" onclick="goTo('cal',this)"><span class="ni">▦</span>Дни</button>
+  <button class="nb" onclick="goTo('goals',this)"><span class="ni">◇</span>Цели</button>
+  <button class="nb" onclick="goTo('plan',this)"><span class="ni">◈</span>План</button>
+  <button class="nb" onclick="goTo('settings',this)"><span class="ni">◉</span>Данные</button>
+</nav>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+// Если сервер на том же домене — оставь пустую строку.
+// Если сервер на другом хосте — укажи полный URL: 'https://your-app.railway.app'
+const API_URL = '';
+
+const TG = window.Telegram?.WebApp;
+const INIT_DATA = TG?.initData || '';
+
+// ── SYNC INDICATOR ────────────────────────────────────────────────────────────
+const syncDot = document.getElementById('sync-dot');
+let syncTimer = null;
+function showSync(state) {
+  syncDot.className = state;
+  clearTimeout(syncTimer);
+  if (state !== 'saving') syncTimer = setTimeout(() => { syncDot.style.opacity = '0'; }, 1500);
+}
+
+// ── PERSISTENCE: DB-first, localStorage fallback ──────────────────────────────
+async function saveS() {
+  // Always keep a local cache so the app works offline
+  localStorage.setItem('bgt_v4', JSON.stringify(S));
+
+  if (!INIT_DATA) return; // local dev without Telegram — localStorage only
+
+  showSync('saving');
+  try {
+    const r = await fetch(API_URL + '/api/state', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Init-Data': INIT_DATA
+      },
+      body: JSON.stringify(S)
+    });
+    showSync(r.ok ? '' : 'error');
+  } catch (e) {
+    showSync('error');
+    console.warn('saveS failed, data kept in localStorage:', e);
+  }
+}
+
+async function loadS() {
+  // Try server first
+  if (INIT_DATA) {
+    try {
+      const r = await fetch(API_URL + '/api/state', {
+        headers: { 'X-Init-Data': INIT_DATA }
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data && Object.keys(data).length > 0) {
+          S = data;
+          // Refresh local cache
+          localStorage.setItem('bgt_v4', JSON.stringify(S));
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('loadS from server failed, using localStorage:', e);
+    }
+  }
+  // Fallback: localStorage (or first run — S stays as default)
+  const cached = localStorage.getItem('bgt_v4');
+  if (cached) {
+    try { S = JSON.parse(cached); } catch (e) {}
+  }
+}
+
+// ── QUOTES ───────────────────────────────────────────────────────────────────
+const QUOTES=[
+  {q:"Богатство — это не про то, сколько ты зарабатываешь. Это про то, сколько ты оставляешь.",a:"Уоррен Баффет",ctx:"Твои 7 € на кофе — это 7 € × 365 = 2 555 € в год. 17% твоего долга. Каждый маленький выбор строит или разрушает большую картину."},
+  {q:"Не трать деньги которых нет. И главное — никогда не трать деньги, которых у тебя ещё нет.",a:"Томас Джефферсон",ctx:"Долг — это будущее время, купленное сегодня за дорогую цену. Каждые 500 € платежа — это кусок свободы, который ты возвращаешь себе."},
+  {q:"Сложные проценты — восьмое чудо света. Кто понимает — зарабатывает. Кто не понимает — платит.",a:"Альберт Эйнштейн",ctx:"Твой долг работает против тебя прямо сейчас. Каждый лишний евро на погашение — атака на эту машину. Ты уже начал."},
+  {q:"Бюджет говорит деньгам куда идти — вместо того чтобы потом удивляться куда они ушли.",a:"Дэйв Рэмси",ctx:"Этот план — твоё оружие. 5 € в день — не бедность, это дисциплина. Еда в отеле бесплатно, кофе тоже. Ты уже убрал самые дорогие привычки."},
+  {q:"Маленькие расходы — вот где тонут большие деньги.",a:"Бенджамин Франклин",ctx:"5 € кофе × 20 рабочих дней = 100 €. Треть твоего личного бюджета на месяц. Кофе на работе бесплатный — это уже победа."},
+  {q:"Финансовая свобода — это когда твои активы работают harder чем ты.",a:"Роберт Кийосаки",ctx:"Твои стейблы в DeFi уже работают пока ты спишь. Маленький старт — но это зерно машины, которая однажды покроет базовые расходы сама."},
+  {q:"Если ты не найдёшь способ зарабатывать пока спишь — ты будешь работать до смерти.",a:"Уоррен Баффет",ctx:"Сейчас задача — убить долг. Когда он умрёт, те же 815 € / мес станут твоей армией. Терпение сейчас = свобода потом."},
+  {q:"Богатый — тот, кто тратит меньше чем зарабатывает. Это весь секрет.",a:"Томас Стэнли",ctx:"Режим жёсткого старта. Эта фаза временная. Привычки, которые ты строишь сейчас — навсегда."},
+  {q:"Дисциплина — это мост между целями и достижениями.",a:"Джим Рон",ctx:"Цель — закрыть долг. Мост — 500 € каждый месяц + 5 € / день. Каждый чистый день без лишней траты — кирпич в этом мосту."},
+  {q:"Настоящая роскошь — когда можешь сказать 'нет' всему ради того 'да' которое изменит всё.",a:"Нассим Талеб",ctx:"Сегодня ты говоришь 'нет' лишнему. Это выбор в пользу дня когда долга нет и 815 € каждый месяц — твои."},
+  {q:"Хочешь стать богатым? Сначала перестань быть бедным в голове.",a:"Т. Харв Экер",ctx:"Бедное мышление: 'Заслуживаю кофе — тяжёлый день.' Богатое: '5 € = 60 € в год = 1% пути к свободе.' Каждый день ты выбираешь."},
+  {q:"Деньги — это слуга умного и хозяин дурака.",a:"Фрэнсис Бэкон",ctx:"Пока есть долг — деньги частично командуют тобой. Каждый месяц дисциплины — шаг к позиции где ты командуешь деньгами."},
+  {q:"Чаевые — это не случайный бонус. Это твой труд, отражённый в благодарности человека.",a:"Личный консультант",ctx:"Каждые чаевые которые ты записываешь — это живые деньги которые ускоряют план. 20 € чаевых сегодня = 4 дня запаса в роллинге."},
+  {q:"Финансовый мир прост: не трать денег которых нет, инвестируй остаток, повторяй.",a:"Уоррен Баффет",ctx:"Ты уже следуешь этой формуле. Долг уменьшается. Подушка растёт. DeFi работает. Hylo ждёт. Математика на твоей стороне."},
+  {q:"Первое правило: никогда не теряй деньги. Второе правило: не забывай первое.",a:"Уоррен Баффет",ctx:"Каждый день без лишней траты — деньги которые ты не потерял. Умножь на 365 дней и получишь трансформацию."}
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+const DAILY=5,PAYDAY=25,CDAY=20,DEBT0=15000,CTGT=1500;
+const ECAT={food:{l:'Еда',c:'#EF9F27'},transport:{l:'Транспорт',c:'#1D9E75'},gym:{l:'Качалка',c:'#7F77DD'},health:{l:'Здоровье',c:'#D85A30'},other:{l:'Прочее',c:'#888780'}};
+const ICAT={tips:{l:'Чаевые',c:'#1D9E75'},extra:{l:'Подработка',c:'#378ADD'},bonus:{l:'Бонус',c:'#7F77DD'},other:{l:'Прочее',c:'#888780'}};
+let S={ex:[],inc:[],debt:DEBT0,cush:0,defi:0,card:0,qdate:'',qidx:0,ob:false};
+let ch=null;
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function cStart(){const n=new Date(),d=n.getDate(),m=n.getMonth(),y=n.getFullYear();return d<CDAY?new Date(y,m-1,CDAY):new Date(y,m,CDAY);}
+function cEnd(){const s=cStart();return new Date(s.getFullYear(),s.getMonth()+1,CDAY);}
+function cLen(){return Math.floor((cEnd()-cStart())/86400000);}
+function elapsed(){const s=cStart(),t=new Date();t.setHours(0,0,0,0);return Math.max(1,Math.floor((t-s)/86400000)+1);}
+function dtp(){const t=new Date();t.setHours(0,0,0,0);const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();if(d===PAYDAY)return 0;return d<PAYDAY?PAYDAY-d:Math.floor((new Date(y,m+1,PAYDAY)-t)/86400000);}
+function cExps(){const s=cStart(),e=cEnd();return S.ex.filter(x=>{const d=new Date(x.date);return d>=s&&d<e;});}
+function cIncs(){const s=cStart(),e=cEnd();return S.inc.filter(x=>{const d=new Date(x.date);return d>=s&&d<e;});}
+function rolling(){
+  const spent=cExps().reduce((a,x)=>a+x.amount,0);
+  const income=cIncs().reduce((a,x)=>a+x.amount,0);
+  return Math.round(((elapsed()*DAILY)+income-spent)*10)/10;
+}
+function ts(){return new Date().toISOString().slice(0,10);}
+function fmt(n){return(Math.round(n*10)/10).toLocaleString('ru-RU');}
+function fd(d){return d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});}
+
+function getQ(){
+  const t=ts();
+  if(S.qdate!==t){S.qidx=(S.qidx+1)%QUOTES.length;S.qdate=t;saveS();}
+  return QUOTES[S.qidx];
+}
+function closeSplash(){const e=document.getElementById('splash');e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(()=>e.classList.add('gone'),320);}
+
+function openModal(id){document.getElementById(id).classList.remove('gone');}
+function closeModal(id){document.getElementById(id).classList.add('gone');}
+
+function showOb(){document.getElementById('onboard').classList.remove('gone');}
+async function saveOnboard(){
+  S.card=parseFloat(document.getElementById('ob-card').value)||0;
+  S.defi=parseFloat(document.getElementById('ob-defi').value)||0;
+  S.debt=parseFloat(document.getElementById('ob-debt').value)||DEBT0;
+  S.cush=parseFloat(document.getElementById('ob-cush').value)||0;
+  S.ob=true;
+  await saveS();
+  document.getElementById('onboard').classList.add('gone');
+  renderHome();
+}
+function resetOb(){if(confirm('Сбросить стартовые данные?')){S.ob=false;saveS();showOb();}}
+
+function goTo(id,btn){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
+  document.getElementById('screen-'+id).classList.add('on');
+  btn.classList.add('on');
+  if(id==='cal')renderCal();
+  if(id==='goals')renderGoals();
+  if(id==='settings')renderSettings();
+}
+
+function addExpense(){
+  const a=parseFloat(document.getElementById('e-amt').value);
+  if(!a||a<=0){TG?.HapticFeedback?.notificationOccurred('error');return;}
+  const date=document.getElementById('e-date').value||ts();
+  S.ex.push({id:Date.now(),date,amount:a,category:document.getElementById('e-cat').value,note:document.getElementById('e-note').value.trim()});
+  S.card=Math.max(0,Math.round((S.card-a)*100)/100);
+  document.getElementById('e-amt').value='';
+  document.getElementById('e-note').value='';
+  closeModal('exp-modal');
+  saveS();renderHome();
+  TG?.HapticFeedback?.impactOccurred('medium');
+}
+
+function addIncome(){
+  const a=parseFloat(document.getElementById('i-amt').value);
+  if(!a||a<=0){TG?.HapticFeedback?.notificationOccurred('error');return;}
+  const date=document.getElementById('i-date').value||ts();
+  S.inc.push({id:Date.now(),date,amount:a,category:document.getElementById('i-cat').value,note:document.getElementById('i-note').value.trim()});
+  S.card=Math.round((S.card+a)*100)/100;
+  document.getElementById('i-amt').value='';
+  document.getElementById('i-note').value='';
+  closeModal('inc-modal');
+  saveS();renderHome();
+  TG?.HapticFeedback?.notificationOccurred('success');
+}
+
+function delTx(id,type){
+  if(type==='exp'){const x=S.ex.find(e=>e.id===id);if(x)S.card=Math.round((S.card+x.amount)*100)/100;S.ex=S.ex.filter(e=>e.id!==id);}
+  else{const x=S.inc.find(e=>e.id===id);if(x)S.card=Math.max(0,Math.round((S.card-x.amount)*100)/100);S.inc=S.inc.filter(e=>e.id!==id);}
+  saveS();renderHome();renderSettings();
+}
+function saveDebt(){const v=parseFloat(document.getElementById('sd').value);if(!isNaN(v)&&v>=0){S.debt=v;saveS();renderHome();}}
+function saveCush(){const v=parseFloat(document.getElementById('sc').value);if(!isNaN(v)&&v>=0){S.cush=v;saveS();renderHome();}}
+function saveDefi(){const v=parseFloat(document.getElementById('sdf').value);if(!isNaN(v)&&v>=0){S.defi=v;saveS();renderHome();}}
+function saveCard(){const v=parseFloat(document.getElementById('scard').value);if(!isNaN(v)&&v>=0){S.card=v;saveS();renderHome();}}
+function clearAll(){if(!confirm('Удалить все операции?'))return;S.ex=[];S.inc=[];saveS();renderHome();renderSettings();}
+
+function txRow(x,type){
+  const cat=type==='exp'?ECAT[x.category]:ICAT[x.category];
+  const d=x.date.slice(8,10)+'.'+x.date.slice(5,7);
+  const sign=type==='exp'?'−':'+';
+  const cls=type==='inc'?' plus':'';
+  return`<div class="tx"><div class="tx-dot${type==='inc'?' income-dot':''}" style="background:${cat.c}"></div><div class="tx-body"><div class="tx-name">${cat.l}${x.note?' · '+x.note:''}</div><div class="tx-meta">${d}</div></div><div class="tx-amt${cls}">${sign}${fmt(x.amount)} €</div><button class="tx-del" onclick="delTx(${x.id},'${type}')">×</button></div>`;
+}
+
+function renderHome(){
+  const MONTHS=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const now=new Date();
+  document.getElementById('h-month').textContent=MONTHS[now.getMonth()]+' '+now.getFullYear();
+  const s=cStart(),e=cEnd();
+  document.getElementById('h-cycle').textContent='Цикл: '+fd(s)+' → '+fd(new Date(e-86400000))+' · зарплата 25-го';
+
+  const d=dtp();
+  const cdn=document.getElementById('cd-n'),cdt=document.getElementById('cd-title'),cds=document.getElementById('cd-sub'),cdtg=document.getElementById('cd-tag');
+  if(d===0){cdn.textContent='🎯';cdt.textContent='Сегодня зарплата!';cds.textContent='+2 000 € · распредели по плану';cdtg.textContent='Аренда → долг → подушка → DeFi';cdtg.style.background='rgba(29,158,117,.15)';cdtg.style.color='#0F6E56';}
+  else{cdn.textContent=d;cdt.textContent=d===1?'день до зарплаты':'дней до зарплаты';cds.textContent='25-е · +2 000 €';cdtg.textContent=`Макс до 25-го: ${d*DAILY} € (${DAILY} € / день)`;cdtg.style.background='';cdtg.style.color='';}
+
+  const q=getQ();
+  document.getElementById('qs-text').textContent=q.q;
+  document.getElementById('qs-author').textContent='— '+q.a;
+
+  const exps=cExps(),incs=cIncs();
+  const spent=exps.reduce((a,x)=>a+x.amount,0);
+  const income=incs.reduce((a,x)=>a+x.amount,0);
+  const avail=rolling();
+  const cl=cLen();
+  const el=elapsed();
+
+  const hero=document.getElementById('hero');
+  hero.className='hero '+(avail<0?'red':avail>=15?'green':'blue');
+  document.getElementById('h-avail').textContent=avail>=0?fmt(avail):'-'+fmt(Math.abs(avail));
+  let sub=`День ${el} из ${cl}`;
+  if(income>0)sub+=` · +${fmt(income)} € доп. доход`;
+  if(avail<0)sub=`Перерасход ${fmt(Math.abs(avail))} € — следующие дни держись`;
+  document.getElementById('h-sub').textContent=sub;
+  document.getElementById('h-fill').style.width=Math.max(0,Math.min(100,Math.round(avail/(DAILY*3)*100)))+'%';
+
+  document.getElementById('s-card').textContent=fmt(S.card)+' €';
+  document.getElementById('s-card-sub').textContent=S.card<30?'осторожно — мало!':'на карте';
+  document.getElementById('s-card-fill').style.width=Math.min(100,Math.round(S.card/400*100))+'%';
+  document.getElementById('s-card-fill').style.background=S.card<30?'var(--red)':'var(--green)';
+
+  document.getElementById('s-income').textContent=fmt(income)+' €';
+  document.getElementById('s-income-sub').textContent=incs.length?`${incs.length} поступл.`:'ещё ничего';
+  document.getElementById('s-income-fill').style.width=Math.min(100,Math.round(income/100*100))+'%';
+
+  const dp=Math.max(0,Math.min(100,Math.round((1-S.debt/DEBT0)*100)));
+  document.getElementById('s-debt').textContent=Math.round(S.debt).toLocaleString('ru-RU')+' €';
+  document.getElementById('s-debt-fill').style.width=dp+'%';
+  document.getElementById('s-debt-pct').textContent=dp+'% закрыто';
+
+  const cp=Math.min(100,Math.round(S.cush/CTGT*100));
+  document.getElementById('s-cush').textContent=Math.round(S.cush).toLocaleString('ru-RU')+' €';
+  document.getElementById('s-cush-fill').style.width=cp+'%';
+  document.getElementById('s-cush-sub').textContent='из 1 500 €';
+
+  document.getElementById('s-defi').textContent=Math.round(S.defi).toLocaleString('ru-RU')+' €';
+  document.getElementById('s-defi-fill').style.width=Math.min(100,Math.round(S.defi/500*100))+'%';
+
+  const paidAmt=Math.max(0,DEBT0-S.debt);
+  const paidPct=Math.max(0,Math.min(100,Math.round(paidAmt/DEBT0*100)));
+  const fillEl=document.getElementById('dp-fill');
+  const pctEl=document.getElementById('dp-pct');
+  const cls=paidPct>=75?'hi':paidPct>=33?'mid':'';
+  fillEl.className='debt-fill'+(cls?' '+cls:'');
+  pctEl.className='debt-pct-big'+(cls?' '+cls:'');
+  fillEl.style.width=paidPct+'%';
+  pctEl.textContent=paidPct+'%';
+  document.getElementById('dp-remain').textContent=Math.round(S.debt).toLocaleString('ru-RU')+' €';
+  document.getElementById('dp-paid-of').textContent='из '+DEBT0.toLocaleString('ru-RU')+' €';
+  document.getElementById('dp-paid-amt').textContent=Math.round(paidAmt).toLocaleString('ru-RU')+' €';
+  const etaMonths=S.debt>0?Math.ceil(S.debt/815):0;
+  document.getElementById('dp-eta').textContent=etaMonths>0?'~'+etaMonths+' мес':'ГОТОВО!';
+  document.getElementById('dp-monthly').textContent='500–815 €';
+  [['dm0','Старт',0],['dm25','25%',25],['dm50','50%',50],['dm75','75%',75],['dm100','Свобода',100]].forEach(([id,lbl,pct])=>{
+    const el=document.getElementById(id);el.textContent=lbl;el.className='debt-mark'+(paidPct>=pct?' done':'');
+  });
+  const mottos=[
+    [0,5,'Старт — самое важное решение уже принято. Путь начат.'],
+    [5,15,'Первые шаги. Каждый месяц — ещё один кусок свободы.'],
+    [15,25,'Видно прогресс. Система работает. Продолжай.'],
+    [25,40,'Четверть пути. Привычка уже сформирована — это дороже денег.'],
+    [40,50,'Почти половина. Ты уже другой человек чем год назад.'],
+    [50,65,'Перевалил за половину. Теперь под горку — темп растёт.'],
+    [65,75,'Три четверти на горизонте. Финиш уже виден.'],
+    [75,90,'75%+ закрыто. Финальный рывок. Не сбавляй.'],
+    [90,99,'Финишная прямая. Ещё несколько месяцев — и ты свободен.'],
+    [99,101,'Долг закрыт. Теперь те же деньги работают на тебя.']
+  ];
+  const motto=mottos.find(([a,b])=>paidPct>=a&&paidPct<b)||mottos[0];
+  document.getElementById('dp-motto').innerHTML='<b>'+motto[2].split('.')[0]+'.</b> '+motto[2].split('.').slice(1).join('.').trim();
+
+  const allTx=[...exps.map(x=>({...x,type:'exp'})),...incs.map(x=>({...x,type:'inc'}))].sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id).slice(0,10);
+  document.getElementById('home-tx').innerHTML=allTx.length?allTx.map(x=>txRow(x,x.type)).join(''):'<div class="empty">Пока пусто — нажми «Потратил» или «Получил»</div>';
+}
+
+function renderCal(){
+  const s=cStart(),e=cEnd(),cl=cLen();
+  const today=new Date();today.setHours(0,0,0,0);
+  const exps=cExps(),incs=cIncs();
+  const avail=rolling();
+  const dayExp={},dayInc={};
+  exps.forEach(x=>{dayExp[x.date]=(dayExp[x.date]||0)+x.amount;});
+  incs.forEach(x=>{dayInc[x.date]=(dayInc[x.date]||0)+x.amount;});
+
+  document.getElementById('cal-title').textContent=fd(s)+' → '+fd(new Date(e-86400000))+' · 25-е = зарплата';
+  const cn=document.getElementById('cal-note');
+  cn.className='note '+(avail>=0?'ok':'bad');
+  cn.textContent=avail>=0?`Роллинг +${fmt(avail)} € — ты в плюсе!`:`Роллинг −${fmt(Math.abs(avail))} € — следующие дни без трат.`;
+
+  document.getElementById('cal-hdr').innerHTML=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d=>`<div class="ch">${d}</div>`).join('');
+
+  const fdow=(s.getDay()+6)%7;
+  const cells=Array(fdow).fill(null);
+  for(let i=0;i<cl;i++){const d=new Date(s);d.setDate(s.getDate()+i);cells.push(d);}
+  while(cells.length%7)cells.push(null);
+
+  document.getElementById('cal-grid').innerHTML=cells.map(d=>{
+    if(!d)return'<div class="cd2 out"></div>';
+    const ds=d.toISOString().slice(0,10);
+    const isToday=d.getTime()===today.getTime();
+    const isFuture=d>today;
+    const isPay=d.getDate()===PAYDAY;
+    const exp=dayExp[ds]||0,inc=dayInc[ds]||0;
+    let cls='cd2';
+    if(isPay)cls+=' payday';
+    if(isToday)cls+=' today';
+    else if(isFuture)cls+=' future';
+    else if(inc>0&&exp===0)cls+=' got';
+    else if(exp>0)cls+=' spent';
+    else cls+=' clean';
+    let aStr='';
+    if(isPay&&isFuture)aStr='+2000€';
+    else if(!isFuture){if(inc>0&&exp===0)aStr='+'+inc.toFixed(0)+'€';else if(exp>0)aStr=exp.toFixed(1)+'€';else aStr='0€';}
+    return`<div class="${cls}"><div class="dn">${d.getDate()}</div><div class="da">${aStr}</div></div>`;
+  }).join('');
+
+  const el=elapsed();
+  const labels=[],expData=[],incData=[];
+  for(let i=0;i<Math.min(el,cl);i++){
+    const d=new Date(s);d.setDate(s.getDate()+i);
+    const ds=d.toISOString().slice(0,10);
+    labels.push(d.getDate()+'/'+(d.getMonth()+1));
+    expData.push(dayExp[ds]||0);
+    incData.push(dayInc[ds]||0);
+  }
+  if(ch){ch.destroy();ch=null;}
+  ch=new Chart(document.getElementById('chart'),{
+    type:'bar',
+    data:{labels,datasets:[
+      {label:'Расход',data:expData,backgroundColor:expData.map(v=>v>DAILY?'#E24B4A':'rgba(226,75,74,.5)'),borderRadius:4,borderSkipped:false},
+      {label:'Доход',data:incData,backgroundColor:'rgba(29,158,117,.6)',borderRadius:4,borderSkipped:false}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+ctx.parsed.y.toFixed(1)+' €'}}},scales:{y:{beginAtZero:true,stacked:false,ticks:{callback:v=>v+'€',font:{size:10}},grid:{color:'rgba(128,128,128,.08)'}},x:{ticks:{font:{size:10},maxTicksLimit:12},grid:{display:false}}}}
+  });
+}
+
+function renderSettings(){
+  document.getElementById('sd').placeholder=Math.round(S.debt);
+  document.getElementById('sc').placeholder=Math.round(S.cush);
+  document.getElementById('sdf').placeholder=Math.round(S.defi);
+  document.getElementById('scard').placeholder=fmt(S.card);
+  const all=[...S.ex.map(x=>({...x,type:'exp'})),...S.inc.map(x=>({...x,type:'inc'}))].sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  document.getElementById('all-tx').innerHTML=all.length?all.map(x=>txRow(x,x.type)).join(''):'<div class="empty">Нет операций.</div>';
+}
+
+// ── GOALS ENGINE ─────────────────────────────────────────────────────────────
+const HAB=[
+  {id:'h0',name:'0 € лишних трат',sub:'Только по плану',icon:'💰'},
+  {id:'h1',name:'Спорт / качалка',sub:'Движение = дисциплина',icon:'🏋️'},
+  {id:'h2',name:'Кофе только на работе',sub:'7€ × 365 = 2555€',icon:'☕'},
+  {id:'h3',name:'Открыл план утром',sub:'30 секунд — весь день ясен',icon:'📋'},
+  {id:'h4',name:'Благодарность',sub:'За прогресс и здоровье',icon:'🙏'},
+];
+let dv='today',sv='week';
+const COLORS=['#378ADD','#7F77DD','#EF9F27','#D85A30','#1D9E75','#E24B4A','#888780'];
+
+function initG(){
+  if(!S.g)S.g={
+    days:{},
+    week:[],
+    month:[],
+    big:[
+      {id:1,name:'Закрыть долг',current:0,target:DEBT0,unit:'€',color:'#E24B4A',parentId:null},
+      {id:2,name:'Подушка безопасности',current:0,target:CTGT,unit:'€',color:'#1D9E75',parentId:null},
+    ],
+    ws:'',ms:''
+  };
+}
+
+function dk(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toISOString().slice(0,10);}
+function ensD(k){if(!S.g.days[k])S.g.days[k]={habs:{},tasks:[]};return S.g.days[k];}
+function vKey(){return dv==='today'?dk(0):dk(1);}
+
+function chkWeek(){
+  const n=new Date(),m=new Date(n);m.setDate(n.getDate()-((n.getDay()+6)%7));m.setHours(0,0,0,0);
+  const ms=m.toISOString().slice(0,10);
+  if(S.g.ws!==ms){S.g.ws=ms;S.g.week.forEach(g=>{g.current=0;});}
+}
+function chkMonth(){
+  const ms=new Date().toISOString().slice(0,7);
+  if(S.g.ms!==ms){S.g.ms=ms;S.g.month.forEach(g=>{g.current=0;});}
+}
+
+function setDay(v,el){dv=v;document.querySelectorAll('.dtab button').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderGoals();}
+function setScope(v,el){sv=v;document.querySelectorAll('.stab').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderGoals();}
+
+function toggleHab(id){
+  const k=vKey(),d=ensD(k);
+  const was=!!d.habs[id];
+  d.habs[id]=!was;
+  if(!was){const link=findHabitLink(id);if(link){const g=S.g.week.find(x=>x.id===link);if(g&&g.current<g.target)g.current++;}}
+  else{const link=findHabitLink(id);if(link){const g=S.g.week.find(x=>x.id===link);if(g&&g.current>0)g.current--;}}
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+function findHabitLink(habId){
+  if(habId==='h1'){const g=S.g.week.find(x=>/(зал|спорт|gym|качалк)/i.test(x.name));return g?g.id:null;}
+  return null;
+}
+
+function addTask(){
+  const inp=document.getElementById('nt-name');
+  const name=inp.value.trim();
+  if(!name)return;
+  const linkId=parseInt(document.getElementById('nt-link').value)||null;
+  const k=vKey(),d=ensD(k);
+  d.tasks.push({id:Date.now(),name,done:false,linkId});
+  inp.value='';
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+function toggleTask(tid){
+  const k=vKey(),d=ensD(k);
+  const t=d.tasks.find(x=>x.id===tid);
+  if(!t)return;
+  const was=t.done;t.done=!was;
+  if(t.linkId){const g=S.g.week.find(x=>x.id===t.linkId);if(g){if(!was&&g.current<g.target)g.current++;else if(was&&g.current>0)g.current--;}}
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+function delTask(tid){
+  const k=vKey(),d=ensD(k);
+  const t=d.tasks.find(x=>x.id===tid);
+  if(t&&t.done&&t.linkId){const g=S.g.week.find(x=>x.id===t.linkId);if(g&&g.current>0)g.current--;}
+  d.tasks=d.tasks.filter(x=>x.id!==tid);
+  saveS();renderGoals();
+}
+
+function toggleAP(){document.getElementById('ap-form').classList.toggle('gone');}
+
+function addGoal(){
+  const name=document.getElementById('ap-name').value.trim();
+  const target=parseFloat(document.getElementById('ap-target').value);
+  const unit=document.getElementById('ap-unit').value.trim()||'раз';
+  const parentId=parseInt(document.getElementById('ap-parent').value)||null;
+  if(!name||!target)return;
+  const list=sv==='week'?S.g.week:sv==='month'?S.g.month:S.g.big;
+  const col=COLORS[list.length%COLORS.length];
+  list.push({id:Date.now(),name,target,current:0,unit,color:col,parentId});
+  document.getElementById('ap-name').value='';
+  document.getElementById('ap-target').value='';
+  document.getElementById('ap-unit').value='';
+  document.getElementById('ap-parent').value='';
+  document.getElementById('ap-form').classList.add('gone');
+  saveS();renderGoals();
+}
+
+function updG(scope,id,delta){
+  const list=scope==='week'?S.g.week:scope==='month'?S.g.month:S.g.big;
+  const g=list.find(x=>x.id===id);
+  if(g){g.current=Math.max(0,Math.min(g.target,(g.current||0)+delta));}
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+function delG(scope,id){
+  if(scope==='week')S.g.week=S.g.week.filter(x=>x.id!==id);
+  else if(scope==='month')S.g.month=S.g.month.filter(x=>x.id!==id);
+  else S.g.big=S.g.big.filter(x=>x.id!==id);
+  saveS();renderGoals();
+}
+
+function getStreak(hid){
+  let s=0;const d=new Date();
+  for(let i=0;i<365;i++){
+    const k=d.toISOString().slice(0,10);
+    const dd=S.g.days[k];
+    if(dd&&dd.habs[hid])s++;
+    else if(i>0)break;
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  const tk=dk(0),td=S.g.days[tk];
+  if(!td||!td.habs[hid])return 0;
+  return s;
+}
+
+function parentName(parentId,scope){
+  if(!parentId)return null;
+  let list;
+  if(scope==='week')list=S.g.month;
+  else if(scope==='month')list=S.g.big;
+  else return null;
+  const p=list.find(x=>x.id===parentId);
+  return p?p.name:null;
+}
+
+function childGoals(parentId,scope){
+  let list;
+  if(scope==='global')list=S.g.month;
+  else if(scope==='month')list=S.g.week;
+  else return[];
+  return list.filter(g=>g.parentId===parentId);
+}
+
+function renderGoals(){
+  if(!S.g)initG();
+  chkWeek();chkMonth();
+  const DN=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  const DL=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+  const MS=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  const vk=vKey();
+  const vd=new Date(vk+'T12:00:00');
+  const isTmrw=dv==='tomorrow';
+  const todayK=dk(0);
+
+  document.getElementById('g-title').textContent=isTmrw?'Планирую завтра':'Сегодня';
+  document.getElementById('d-inner-title').textContent=isTmrw?'План на завтра':'Чеклист дня';
+  document.getElementById('d-date').textContent=DL[vd.getDay()]+', '+vd.getDate()+' '+MS[vd.getMonth()];
+
+  const day=ensD(vk);
+
+  let habHtml='';
+  HAB.forEach(h=>{
+    const done=!!day.habs[h.id];
+    const streak=dv==='today'&&done?getStreak(h.id):0;
+    const link=findHabitLink(h.id);
+    const linkG=link?S.g.week.find(x=>x.id===link):null;
+    habHtml+='<div class="ti" onclick="toggleHab(\''+h.id+'\')">'+
+      '<div class="tchk'+(done?' done':'')+'"></div>'+
+      '<div style="font-size:18px;flex-shrink:0;">'+h.icon+'</div>'+
+      '<div class="tbody"><div class="tname'+(done?' x':'')+'">'+h.name+'</div>'+
+      '<div class="tsub">'+h.sub+'</div>'+
+      (linkG?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;">→ '+linkG.name+'</div>':'')+
+      '</div><div class="tright">'+(streak>=2?'<div class="tstreak">'+streak+'д</div>':'')+'</div></div>';
+  });
+  document.getElementById('hab-list').innerHTML=habHtml;
+
+  const tHtml=day.tasks.length?day.tasks.map(t=>{
+    const linkG=t.linkId?S.g.week.find(x=>x.id===t.linkId):null;
+    return'<div class="ti" onclick="toggleTask('+t.id+')">'+
+      '<div class="tchk'+(t.done?' done':'')+'"></div>'+
+      '<div class="tbody"><div class="tname'+(t.done?' x':'')+'">'+t.name+'</div>'+
+      (linkG?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;">→ '+linkG.name+'</div>':
+        '<div class="tsub" style="color:var(--amber);">Без привязки к цели</div>')+
+      '</div><div class="tright">'+
+      '<button class="tdel" onclick="event.stopPropagation();delTask('+t.id+')">×</button></div></div>';
+  }).join(''):'<div style="font-size:13px;color:var(--hint);padding:8px 0;">'+(isTmrw?'Спланируй завтра прямо сейчас':'Добавь задачи')+'</div>';
+  document.getElementById('task-list').innerHTML=tHtml;
+
+  const linkSel=document.getElementById('nt-link');
+  linkSel.innerHTML='<option value="">Без цели</option>'+S.g.week.map(g=>
+    '<option value="'+g.id+'" style="color:'+g.color+'">→ '+g.name+'</option>'
+  ).join('');
+
+  const hDone=HAB.filter(h=>!!day.habs[h.id]).length;
+  const tDone=day.tasks.filter(t=>t.done).length;
+  const total=HAB.length+day.tasks.length;
+  const sc=document.getElementById('d-score');
+  sc.textContent=(hDone+tDone)+'/'+total;
+  sc.style.color=(hDone+tDone)===total&&total>0?'var(--green)':'var(--accent)';
+
+  const now=new Date();
+  const mon=new Date(now);mon.setDate(now.getDate()-((now.getDay()+6)%7));mon.setHours(0,0,0,0);
+  let dots='';
+  for(let i=0;i<7;i++){
+    const wd=new Date(mon);wd.setDate(mon.getDate()+i);
+    const wk=wd.toISOString().slice(0,10);
+    const isT=wk===todayK;
+    const isFut=wd>now;
+    const dd=S.g.days[wk];
+    let cls='wd-c';
+    if(isT)cls+=' today';
+    else if(isFut)cls+=' fut';
+    else if(dd){
+      const h=HAB.filter(x=>dd.habs&&dd.habs[x.id]).length;
+      const t=(dd.tasks||[]).filter(x=>x.done).length;
+      const a=HAB.length+(dd.tasks||[]).length;
+      if(a>0&&h+t===a)cls+=' full';
+      else if(h+t>0)cls+=' part';
+    }
+    dots+='<div class="wd"><div class="wd-l">'+DN[wd.getDay()]+'</div><div class="'+cls+'">'+wd.getDate()+'</div></div>';
+  }
+  document.getElementById('wdots').innerHTML=dots;
+
+  const pSel=document.getElementById('ap-parent');
+  let pOpts='<option value="">Без привязки</option>';
+  if(sv==='week')S.g.month.forEach(g=>{pOpts+='<option value="'+g.id+'">→ '+g.name+'</option>';});
+  else if(sv==='month')S.g.big.forEach(g=>{pOpts+='<option value="'+g.id+'">→ '+g.name+'</option>';});
+  pSel.innerHTML=pOpts;
+
+  const dg=S.g.big.find(x=>x.id===1);if(dg)dg.current=Math.max(0,DEBT0-(S.debt||DEBT0));
+  const cg=S.g.big.find(x=>x.id===2);if(cg)cg.current=S.cush||0;
+
+  renderScope();
+}
+
+function renderScope(){
+  const list=sv==='week'?S.g.week:sv==='month'?S.g.month:S.g.big;
+  const el=document.getElementById('scope-list');
+  const scope=sv;
+  const isBI=(g)=>scope==='global'&&(g.id===1||g.id===2);
+
+  if(!list.length){el.innerHTML='<div class="nogoal">Нет целей. Нажми «+ Добавить цель» чтобы начать.</div>';return;}
+
+  el.innerHTML=list.map(g=>{
+    const pct=Math.min(100,Math.round((g.current||0)/g.target*100));
+    const col=g.color||'var(--accent)';
+    const status=pct>=100?'Достигнуто!':pct>=75?'Финальный рывок':pct>=50?'Больше половины':pct>=25?'Хороший старт':'В процессе';
+    const pName=parentName(g.parentId,scope);
+    const children=childGoals(g.id,scope==='global'?'global':'month');
+    let html='<div class="gc">';
+    if(pName)html+='<div style="font-size:10px;color:var(--hint);margin-bottom:6px;">⬆ '+pName+'</div>';
+    html+='<div class="gc-hdr"><div class="gc-name">'+g.name+'</div><div class="gc-pct" style="color:'+col+'">'+pct+'%</div></div>';
+    html+='<div class="gc-trk"><div class="gc-fill" style="width:'+pct+'%;background:'+col+';"></div></div>';
+    html+='<div class="gc-meta"><span>'+(g.current||0).toLocaleString('ru-RU')+' / '+g.target.toLocaleString('ru-RU')+' '+g.unit+'</span><span style="color:'+col+';font-weight:600;">'+status+'</span></div>';
+    if(children.length){
+      html+='<div class="gc-children">';
+      children.forEach(c=>{
+        const cp=Math.min(100,Math.round((c.current||0)/c.target*100));
+        html+='<div class="gc-child"><div class="gc-child-dot" style="background:'+(c.color||col)+';"></div><span style="flex:1;">'+c.name+'</span><span class="gc-child-pct" style="color:'+(c.color||col)+'">'+cp+'%</span></div>';
+      });
+      html+='</div>';
+    }
+    if(!isBI(g)){
+      html+='<div class="gc-btns">'+
+        '<button class="mbtn" onclick="updG(\''+scope+'\','+g.id+',-1)" style="background:var(--bg);border:none;padding:5px 12px;font-size:14px;font-weight:700;border-radius:8px;">−</button>'+
+        '<button class="mbtn" onclick="updG(\''+scope+'\','+g.id+',1)" style="background:var(--green);color:#fff;border:none;padding:5px 12px;font-size:14px;font-weight:700;border-radius:8px;">+</button>'+
+        '<div style="flex:1;"></div>'+
+        '<button class="tdel" onclick="delG(\''+scope+'\','+g.id+')">×</button>'+
+      '</div>';
+    }
+    html+='</div>';
+    return html;
+  }).join('');
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init(){
+  if(TG){TG.ready();TG.expand();}
+  document.getElementById('e-date').value=ts();
+  document.getElementById('i-date').value=ts();
+
+  await loadS(); // load from DB (or localStorage fallback)
+
+  const q=getQ();
+  document.getElementById('q-text').textContent=q.q;
+  document.getElementById('q-author').textContent='— '+q.a;
+  document.getElementById('q-ctx').textContent=q.ctx;
+  document.getElementById('q-pg').textContent=(S.qidx+1)+' / '+QUOTES.length;
+  document.getElementById('qs-text').textContent=q.q;
+  document.getElementById('qs-author').textContent='— '+q.a;
+
+  initG();
+  renderHome();
+  if(!S.ob){setTimeout(()=>{closeSplash();setTimeout(showOb,350);},500);}
+}
+init();
+</script>
+</body>
+</html>
