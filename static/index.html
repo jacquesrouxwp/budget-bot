@@ -227,6 +227,17 @@ select.inp option{background:var(--bg);}
 .tdel{background:none;border:none;font-size:18px;color:rgba(128,128,128,.25);cursor:pointer;padding:0 2px;}
 .tedit{background:none;border:none;font-size:16px;color:var(--accent);cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .2s;}
 .tedit:active{background:var(--accent);color:var(--bg);transform:scale(.95);}
+.dpopup{position:absolute;top:52px;right:0;width:260px;background:var(--bg);border-radius:var(--r);box-shadow:0 8px 32px rgba(0,0,0,.18);border:.5px solid rgba(128,128,128,.18);z-index:250;max-height:320px;overflow-y:auto;}
+.dpopup.gone{display:none;}
+.dpopup-month{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--hint);padding:12px 14px 6px;}
+.dpopup-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;border-bottom:.5px solid rgba(128,128,128,.07);}
+.dpopup-item:active{background:var(--bg2);}
+.dpopup-item.active{background:var(--accent);color:var(--accent-t);border-radius:8px;margin:2px 8px;padding:8px 10px;}
+.dpopup-item.active .dpopup-sub{color:rgba(255,255,255,.7);}
+.dpopup-date{font-size:15px;font-weight:600;}
+.dpopup-sub{font-size:11px;color:var(--hint);margin-top:1px;}
+.dpopup-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0;}
+.dpopup-dot.none{background:transparent;}
 .addstrip{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:.5px solid rgba(128,128,128,.08);}
 .wdots{display:flex;gap:4px;margin-bottom:16px;justify-content:space-between;}
 .wd{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;}
@@ -580,15 +591,13 @@ select.inp option{background:var(--bg);}
     <div style="font-size:22px;font-weight:700;" id="g-title">Сегодня</div>
   </div>
 
-  <div class="dtab" id="dtab" style="overflow-x:auto;display:flex;gap:8px;padding:0 4px;-webkit-overflow-scrolling:touch;scroll-behavior:smooth;">
-    <button class="on" onclick="setDay('today',this)">Сегодня</button>
-    <button onclick="setDay('tomorrow',this)">Завтра</button>
-    <button onclick="setDay(2,this)">+2 дня</button>
-    <button onclick="setDay(3,this)">+3 дня</button>
-    <button onclick="setDay(4,this)">+4 дня</button>
-    <button onclick="setDay(5,this)">+5 дней</button>
-    <button onclick="setDay(6,this)">+6 дней</button>
+  <div class="dtab" id="dtab" style="display:flex;gap:8px;padding:0 4px;position:relative;">
+    <button class="on" id="dtab-today" onclick="setDay('today',this)">Сегодня</button>
+    <button id="dtab-tomorrow" onclick="setDay('tomorrow',this)">Завтра</button>
+    <button id="dtab-cal" onclick="toggleDatePicker(this)" style="font-size:18px;padding:8px 14px;">📅</button>
   </div>
+  <!-- DATE PICKER POPUP -->
+  <div id="date-picker-popup" class="dpopup gone"></div>
 
   <div class="dblock" id="dblock">
     <div class="dhdr">
@@ -1039,6 +1048,7 @@ function ensD(k){if(!S.g.days[k])S.g.days[k]={habs:{},tasks:[]};return S.g.days[
 function vKey(){
   if(dv==='today')return dk(0);
   if(dv==='tomorrow')return dk(1);
+  if(typeof dv==='string'&&dv.length===10)return dv; // absolute ISO date from calendar
   const off=typeof dv==='number'?dv:0;
   return dk(off);
 }
@@ -1053,8 +1063,53 @@ function chkMonth(){
   if(S.g.ms!==ms){S.g.ms=ms;S.g.month.forEach(g=>{g.current=0;});}
 }
 
-function setDay(v,el){dv=v;document.querySelectorAll('.dtab button').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderGoals();}
+function setDay(v,el){
+  dv=v;
+  document.querySelectorAll('.dtab button').forEach(b=>b.classList.remove('on'));
+  if(el)el.classList.add('on');
+  closeDatePicker();
+  renderGoals();
+}
 function setScope(v,el){sv=v;document.querySelectorAll('.stab').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderGoals();}
+
+function toggleDatePicker(btn){
+  const popup=document.getElementById('date-picker-popup');
+  if(!popup.classList.contains('gone')){closeDatePicker();return;}
+  buildDatePicker();
+  popup.classList.remove('gone');
+}
+function closeDatePicker(){
+  document.getElementById('date-picker-popup').classList.add('gone');
+}
+function buildDatePicker(){
+  const popup=document.getElementById('date-picker-popup');
+  const MS=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  const DN=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  const now=new Date();
+  let html='';
+  let lastMonth=-1;
+  for(let i=2;i<32;i++){
+    const d=new Date();d.setDate(now.getDate()+i);
+    const key=d.toISOString().slice(0,10);
+    const mo=d.getMonth();
+    if(mo!==lastMonth){html+='<div class="dpopup-month">'+MS[mo]+' '+d.getFullYear()+'</div>';lastMonth=mo;}
+    const hasTasks=(S.g.days[key]?.tasks?.length||0)>0;
+    const isActive=dv===key;
+    html+='<div class="dpopup-item'+(isActive?' active':'')+'" onclick="pickDate(\''+key+'\')">'+
+      '<div><div class="dpopup-date">'+d.getDate()+' '+MS[mo]+'</div>'+
+      '<div class="dpopup-sub">'+DN[d.getDay()]+'</div></div>'+
+      '<div class="dpopup-dot'+(hasTasks?'':' none')+'"></div>'+
+    '</div>';
+  }
+  popup.innerHTML=html;
+}
+function pickDate(key){
+  dv=key;
+  document.querySelectorAll('.dtab button').forEach(b=>b.classList.remove('on'));
+  document.getElementById('dtab-cal').classList.add('on');
+  closeDatePicker();
+  renderGoals();
+}
 
 function toggleHab(id){
   const k=vKey(),d=ensD(k);
@@ -1127,6 +1182,14 @@ function saveHabEdit(){
   closeModal('hab-edit-modal');
   TG?.HapticFeedback?.impactOccurred('light');
   saveS();renderGoals();
+  // Register/update server-side notification if user is in Telegram
+  if(INIT_DATA){
+    fetch(API_URL+'/api/notify',{
+      method:'POST',
+      headers:{'X-Init-Data':INIT_DATA,'Content-Type':'application/json'},
+      body:JSON.stringify({habId,habitName:name,time:notif&&time?time:''})
+    }).catch(()=>{});
+  }
 }
 
 async function testNotification(){
@@ -1139,7 +1202,7 @@ async function testNotification(){
     const resp=await fetch(API_URL+'/api/notify',{
       method:'POST',
       headers:{'X-Init-Data':INIT_DATA,'Content-Type':'application/json'},
-      body:JSON.stringify({habitName:name})
+      body:JSON.stringify({habitName:name,test:true})
     });
     if(resp.ok){
       alert('✓ Уведомление отправлено!');
@@ -1226,15 +1289,15 @@ function renderGoals(){
   const MS=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
   const vk=vKey();
   const vd=new Date(vk+'T12:00:00');
-  const isTmrw=dv==='tomorrow';
   const todayK=dk(0);
-  let offset=0;
-  if(dv==='tomorrow')offset=1;
-  else if(typeof dv==='number')offset=dv;
-  const dayName=offset===0?'Сегодня':offset===1?'Завтра':DL[vd.getDay()];
-  const dayPlan=offset===0?'Чеклист дня':offset===1?'План на завтра':'План дня';
+  const isToday=dv==='today';
+  const isTmrw=dv==='tomorrow';
+  const isCal=typeof dv==='string'&&dv.length===10;
 
-  document.getElementById('g-title').textContent=(offset>0&&offset!==1)?'Планирую':'Планирую '+dayName.toLowerCase();
+  const dayPlan=isToday?'Чеклист дня':isTmrw?'План на завтра':'План дня';
+  const titleLabel=isToday?'Сегодня':isTmrw?'Завтра':DL[vd.getDay()]+', '+vd.getDate()+' '+MS[vd.getMonth()];
+
+  document.getElementById('g-title').textContent=isToday?'Сегодня':'Планирую';
   document.getElementById('d-inner-title').textContent=dayPlan;
   document.getElementById('d-date').textContent=DL[vd.getDay()]+', '+vd.getDate()+' '+MS[vd.getMonth()];
 
@@ -1269,7 +1332,7 @@ function renderGoals(){
         '<div class="tsub" style="color:var(--amber);">Без привязки к цели</div>')+
       '</div><div class="tright">'+
       '<button class="tdel" onclick="event.stopPropagation();delTask('+t.id+')">×</button></div></div>';
-  }).join(''):'<div style="font-size:13px;color:var(--hint);padding:8px 0;">'+(offset>0?'Спланируй на этот день':'Добавь задачи')+'</div>';
+  }).join(''):'<div style="font-size:13px;color:var(--hint);padding:8px 0;">'+(isToday?'Добавь задачи на сегодня':'Спланируй этот день')+'</div>';
   document.getElementById('task-list').innerHTML=tHtml;
 
   const linkSel=document.getElementById('nt-link');
@@ -1380,6 +1443,16 @@ async function init(){
   if(!S.ob){setTimeout(()=>{closeSplash();setTimeout(showOb,350);},500);}
 }
 init();
+
+// Close date picker when clicking outside
+document.addEventListener('click',function(e){
+  const popup=document.getElementById('date-picker-popup');
+  if(popup&&!popup.classList.contains('gone')){
+    if(!popup.contains(e.target)&&e.target.id!=='dtab-cal'){
+      closeDatePicker();
+    }
+  }
+});
 </script>
 </body>
 </html>

@@ -14,6 +14,15 @@ from fastapi.staticfiles import StaticFiles
 import httpx
 import uvicorn
 
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    HAS_APScheduler = True
+except ImportError:
+    HAS_APScheduler = False
+
+scheduler = None
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -39,6 +48,15 @@ def init_db():
                 username TEXT,
                 state    TEXT NOT NULL DEFAULT '{}',
                 updated  TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS habit_notifs (
+                user_id    INTEGER,
+                hab_id     TEXT,
+                hab_name   TEXT,
+                notif_time TEXT,
+                PRIMARY KEY (user_id, hab_id)
             )
         """)
         db.commit()
@@ -122,32 +140,71 @@ async def save_state(request: Request):
     return {"ok": True}
 
 
+async def _send_tg_message(chat_id: int, text: str):
+    if not BOT_TOKEN:
+        return
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json={"chat_id": chat_id, "text": text}
+            )
+    except Exception as e:
+        log.error("TG send error: %s", e)
+
+
 @app.post("/api/notify")
-async def send_notification(request: Request):
-    """Send a test notification to user via Telegram."""
+async def save_notification(request: Request):
+    """Save/update notification schedule for a habit, or send immediate test."""
     user = get_user_from_request(request)
     user_id = user["id"]
     body = await request.json()
-    habit_name = body.get("habitName", "Привычка")
+    hab_id    = body.get("habId", "")
+    hab_name  = body.get("habitName", "Привычка")
+    notif_time = body.get("time", "")     # "07:30" or ""
+    test_only  = body.get("test", False)
 
     if not BOT_TOKEN:
         return {"ok": False, "error": "BOT_TOKEN not configured"}
 
-    msg = f"🔔 Напоминание: {habit_name}\n\nВремя выполнить привычку!"
-
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                json={"chat_id": user_id, "text": msg}
-            )
-            if resp.status_code != 200:
-                log.warning(f"Notification send failed: {resp.text}")
-                return {"ok": False, "error": "Failed to send"}
+    # Immediate test message
+    if test_only:
+        msg = f"🔔 Напоминание: {hab_name}\n\nВремя выполнить привычку!"
+        await _send_tg_message(user_id, msg)
         return {"ok": True}
-    except Exception as e:
-        log.error(f"Notification error: {e}")
-        return {"ok": False, "error": str(e)}
+
+    # Save / remove notification preference
+    with get_db() as db:
+        if notif_time:
+            db.execute("""
+                INSERT INTO habit_notifs (user_id, hab_id, hab_name, notif_time)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, hab_id) DO UPDATE SET
+                    hab_name=excluded.hab_name,
+                    notif_time=excluded.notif_time
+            """, (user_id, hab_id, hab_name, notif_time))
+        else:
+            db.execute("DELETE FROM habit_notifs WHERE user_id=? AND hab_id=?", (user_id, hab_id))
+        db.commit()
+
+    # Re-schedule in APScheduler
+    if HAS_APScheduler and scheduler:
+        job_id = f"notif_{user_id}_{hab_id}"
+        try:
+            scheduler.remove_job(job_id)
+        except Exception:
+            pass
+        if notif_time:
+            h, m = map(int, notif_time.split(":"))
+            scheduler.add_job(
+                _send_tg_message,
+                CronTrigger(hour=h, minute=m),
+                args=[user_id, f"🔔 {hab_name}\n\nВремя выполнить привычку!"],
+                id=job_id,
+                replace_existing=True,
+            )
+
+    return {"ok": True}
 
 
 # ── Telegram webhook ──────────────────────────────────────────────────────────
@@ -167,9 +224,33 @@ async def telegram_webhook(request: Request):
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
-def startup():
+async def startup():
+    global scheduler
     init_db()
     log.info("DB initialised at %s", DB_PATH)
+    if HAS_APScheduler:
+        scheduler = AsyncIOScheduler()
+        scheduler.start()
+        # Reload saved notification schedules
+        with get_db() as db:
+            rows = db.execute("SELECT user_id, hab_id, hab_name, notif_time FROM habit_notifs").fetchall()
+        for row in rows:
+            uid, hid, hname, htime = row["user_id"], row["hab_id"], row["hab_name"], row["notif_time"]
+            if htime:
+                try:
+                    h, m = map(int, htime.split(":"))
+                    scheduler.add_job(
+                        _send_tg_message,
+                        CronTrigger(hour=h, minute=m),
+                        args=[uid, f"🔔 {hname}\n\nВремя выполнить привычку!"],
+                        id=f"notif_{uid}_{hid}",
+                        replace_existing=True,
+                    )
+                except Exception as e:
+                    log.warning("Could not restore notif job: %s", e)
+        log.info("Scheduler started, %d jobs loaded", len(rows))
+    else:
+        log.warning("APScheduler not installed — push notifications disabled")
 
 
 # ── Serve static Mini App (must be LAST) ─────────────────────────────────────
