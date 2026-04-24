@@ -225,6 +225,8 @@ select.inp option{background:var(--bg);}
 .tright{display:flex;align-items:center;gap:5px;flex-shrink:0;}
 .tstreak{font-size:10px;font-weight:700;color:var(--amber);padding:2px 7px;background:rgba(239,159,39,.12);border-radius:99px;}
 .tdel{background:none;border:none;font-size:18px;color:rgba(128,128,128,.25);cursor:pointer;padding:0 2px;}
+.tedit{background:none;border:none;font-size:16px;color:var(--accent);cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .2s;}
+.tedit:active{background:var(--accent);color:var(--bg);transform:scale(.95);}
 .addstrip{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:.5px solid rgba(128,128,128,.08);}
 .wdots{display:flex;gap:4px;margin-bottom:16px;justify-content:space-between;}
 .wd{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;}
@@ -346,6 +348,33 @@ select.inp option{background:var(--bg);}
       <input class="inp" type="date" id="i-date" style="max-width:140px;">
     </div>
     <div class="mrow"><button class="mbtn green full" onclick="addIncome()">+ Записать приход</button></div>
+  </div>
+</div>
+
+<!-- HABIT EDIT MODAL -->
+<div class="modal-bg gone" id="hab-edit-modal">
+  <div class="modal">
+    <button class="mclose" onclick="closeModal('hab-edit-modal')">×</button>
+    <div class="modal-title">Редактировать привычку</div>
+    <div class="mrow">
+      <input class="inp" type="text" id="hab-edit-name" placeholder="Название..." maxlength="40" style="flex:1;">
+    </div>
+    <div class="mrow">
+      <label style="font-size:12px;color:var(--hint);margin-bottom:6px;display:block;">Время</label>
+      <input class="inp" type="time" id="hab-edit-time" style="flex:1;">
+    </div>
+    <div style="margin-top:16px;border-top:1px solid rgba(128,128,128,.15);padding-top:12px;">
+      <div style="font-size:12px;color:var(--hint);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Уведомления</div>
+      <label style="display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" id="hab-notif" style="cursor:pointer;width:18px;height:18px;">
+        Отправлять уведомление
+      </label>
+      <button class="mbtn" onclick="testNotification()" style="width:100%;background:var(--accent);color:var(--accent-t);margin-top:8px;padding:10px;font-size:13px;">Тест уведомления</button>
+    </div>
+    <div class="mrow" style="margin-top:14px;gap:8px;">
+      <button class="mbtn" onclick="closeModal('hab-edit-modal')" style="flex:1;background:var(--bg2);color:var(--text);">Отмена</button>
+      <button class="mbtn green" onclick="saveHabEdit()" style="flex:1;">Сохранить</button>
+    </div>
   </div>
 </div>
 
@@ -551,9 +580,14 @@ select.inp option{background:var(--bg);}
     <div style="font-size:22px;font-weight:700;" id="g-title">Сегодня</div>
   </div>
 
-  <div class="dtab">
+  <div class="dtab" id="dtab" style="overflow-x:auto;display:flex;gap:8px;padding:0 4px;-webkit-overflow-scrolling:touch;scroll-behavior:smooth;">
     <button class="on" onclick="setDay('today',this)">Сегодня</button>
     <button onclick="setDay('tomorrow',this)">Завтра</button>
+    <button onclick="setDay(2,this)">+2 дня</button>
+    <button onclick="setDay(3,this)">+3 дня</button>
+    <button onclick="setDay(4,this)">+4 дня</button>
+    <button onclick="setDay(5,this)">+5 дней</button>
+    <button onclick="setDay(6,this)">+6 дней</button>
   </div>
 
   <div class="dblock" id="dblock">
@@ -993,13 +1027,21 @@ function initG(){
       {id:1,name:'Закрыть долг',current:0,target:DEBT0,unit:'€',color:'#E24B4A',parentId:null},
       {id:2,name:'Подушка безопасности',current:0,target:CTGT,unit:'€',color:'#1D9E75',parentId:null},
     ],
+    habitNames:{},
+    habitTimes:{},
+    habitNotifs:{},
     ws:'',ms:''
   };
 }
 
 function dk(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toISOString().slice(0,10);}
 function ensD(k){if(!S.g.days[k])S.g.days[k]={habs:{},tasks:[]};return S.g.days[k];}
-function vKey(){return dv==='today'?dk(0):dk(1);}
+function vKey(){
+  if(dv==='today')return dk(0);
+  if(dv==='tomorrow')return dk(1);
+  const off=typeof dv==='number'?dv:0;
+  return dk(off);
+}
 
 function chkWeek(){
   const n=new Date(),m=new Date(n);m.setDate(n.getDate()-((n.getDay()+6)%7));m.setHours(0,0,0,0);
@@ -1057,6 +1099,56 @@ function delTask(tid){
   if(t&&t.done&&t.linkId){const g=S.g.week.find(x=>x.id===t.linkId);if(g&&g.current>0)g.current--;}
   d.tasks=d.tasks.filter(x=>x.id!==tid);
   saveS();renderGoals();
+}
+
+function openHabEdit(habId){
+  window.currentHabId=habId;
+  const h=HAB.find(x=>x.id===habId);
+  if(!h)return;
+  document.getElementById('hab-edit-name').value=S.g.habitNames?.[habId]||h.name;
+  document.getElementById('hab-edit-time').value=S.g.habitTimes?.[habId]||'';
+  document.getElementById('hab-notif').checked=!!S.g.habitNotifs?.[habId];
+  openModal('hab-edit-modal');
+}
+
+function saveHabEdit(){
+  const habId=window.currentHabId;
+  if(!habId)return;
+  const name=document.getElementById('hab-edit-name').value.trim();
+  const time=document.getElementById('hab-edit-time').value;
+  const notif=document.getElementById('hab-notif').checked;
+  if(!name)return;
+  if(!S.g.habitNames)S.g.habitNames={};
+  if(!S.g.habitTimes)S.g.habitTimes={};
+  if(!S.g.habitNotifs)S.g.habitNotifs={};
+  S.g.habitNames[habId]=name;
+  if(time)S.g.habitTimes[habId]=time;else delete S.g.habitTimes[habId];
+  if(notif)S.g.habitNotifs[habId]=true;else delete S.g.habitNotifs[habId];
+  closeModal('hab-edit-modal');
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+async function testNotification(){
+  const habId=window.currentHabId;
+  if(!habId)return;
+  const name=document.getElementById('hab-edit-name').value.trim();
+  if(!name)return;
+  if(!INIT_DATA){alert('Недоступно в режиме разработки');return;}
+  try{
+    const resp=await fetch(API_URL+'/api/notify',{
+      method:'POST',
+      headers:{'X-Init-Data':INIT_DATA,'Content-Type':'application/json'},
+      body:JSON.stringify({habitName:name})
+    });
+    if(resp.ok){
+      alert('✓ Уведомление отправлено!');
+    }else{
+      alert('✗ Ошибка отправки');
+    }
+  }catch(e){
+    alert('✗ '+e.message);
+  }
 }
 
 function toggleAP(){document.getElementById('ap-form').classList.toggle('gone');}
@@ -1136,9 +1228,14 @@ function renderGoals(){
   const vd=new Date(vk+'T12:00:00');
   const isTmrw=dv==='tomorrow';
   const todayK=dk(0);
+  let offset=0;
+  if(dv==='tomorrow')offset=1;
+  else if(typeof dv==='number')offset=dv;
+  const dayName=offset===0?'Сегодня':offset===1?'Завтра':DL[vd.getDay()];
+  const dayPlan=offset===0?'Чеклист дня':offset===1?'План на завтра':'План дня';
 
-  document.getElementById('g-title').textContent=isTmrw?'Планирую завтра':'Сегодня';
-  document.getElementById('d-inner-title').textContent=isTmrw?'План на завтра':'Чеклист дня';
+  document.getElementById('g-title').textContent=(offset>0&&offset!==1)?'Планирую':'Планирую '+dayName.toLowerCase();
+  document.getElementById('d-inner-title').textContent=dayPlan;
   document.getElementById('d-date').textContent=DL[vd.getDay()]+', '+vd.getDate()+' '+MS[vd.getMonth()];
 
   const day=ensD(vk);
@@ -1149,13 +1246,17 @@ function renderGoals(){
     const streak=dv==='today'&&done?getStreak(h.id):0;
     const link=findHabitLink(h.id);
     const linkG=link?S.g.week.find(x=>x.id===link):null;
+    const customName=S.g.habitNames?.[h.id]||h.name;
+    const customTime=S.g.habitTimes?.[h.id]||'';
     habHtml+='<div class="ti" onclick="toggleHab(\''+h.id+'\')">'+
       '<div class="tchk'+(done?' done':'')+'"></div>'+
       '<div style="font-size:18px;flex-shrink:0;">'+h.icon+'</div>'+
-      '<div class="tbody"><div class="tname'+(done?' x':'')+'">'+h.name+'</div>'+
-      '<div class="tsub">'+h.sub+'</div>'+
+      '<div class="tbody"><div class="tname'+(done?' x':'')+'">'+customName+'</div>'+
+      (customTime?'<div class="tsub" style="color:var(--accent);font-weight:500;">⏰ '+customTime+'</div>':
+        '<div class="tsub">'+h.sub+'</div>')+
       (linkG?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;">→ '+linkG.name+'</div>':'')+
-      '</div><div class="tright">'+(streak>=2?'<div class="tstreak">'+streak+'д</div>':'')+'</div></div>';
+      '</div><div class="tright" style="display:flex;gap:2px;align-items:center;">'+(streak>=2?'<div class="tstreak">'+streak+'д</div>':'')+
+      '<button class="tedit" onclick="event.stopPropagation();openHabEdit(\''+h.id+'\')">✎</button></div></div>';
   });
   document.getElementById('hab-list').innerHTML=habHtml;
 
@@ -1168,7 +1269,7 @@ function renderGoals(){
         '<div class="tsub" style="color:var(--amber);">Без привязки к цели</div>')+
       '</div><div class="tright">'+
       '<button class="tdel" onclick="event.stopPropagation();delTask('+t.id+')">×</button></div></div>';
-  }).join(''):'<div style="font-size:13px;color:var(--hint);padding:8px 0;">'+(isTmrw?'Спланируй завтра прямо сейчас':'Добавь задачи')+'</div>';
+  }).join(''):'<div style="font-size:13px;color:var(--hint);padding:8px 0;">'+(offset>0?'Спланируй на этот день':'Добавь задачи')+'</div>';
   document.getElementById('task-list').innerHTML=tHtml;
 
   const linkSel=document.getElementById('nt-link');

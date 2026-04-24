@@ -5,11 +5,13 @@ Handles: API state save/load, Telegram webhook, serves static Mini App
 import os, json, hmac, hashlib, sqlite3, logging
 from contextlib import contextmanager
 from urllib.parse import parse_qsl
+from datetime import datetime
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+import httpx
 import uvicorn
 
 logging.basicConfig(level=logging.INFO)
@@ -118,6 +120,34 @@ async def save_state(request: Request):
         """, (user_id, username, state_str))
         db.commit()
     return {"ok": True}
+
+
+@app.post("/api/notify")
+async def send_notification(request: Request):
+    """Send a test notification to user via Telegram."""
+    user = get_user_from_request(request)
+    user_id = user["id"]
+    body = await request.json()
+    habit_name = body.get("habitName", "Привычка")
+
+    if not BOT_TOKEN:
+        return {"ok": False, "error": "BOT_TOKEN not configured"}
+
+    msg = f"🔔 Напоминание: {habit_name}\n\nВремя выполнить привычку!"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json={"chat_id": user_id, "text": msg}
+            )
+            if resp.status_code != 200:
+                log.warning(f"Notification send failed: {resp.text}")
+                return {"ok": False, "error": "Failed to send"}
+        return {"ok": True}
+    except Exception as e:
+        log.error(f"Notification error: {e}")
+        return {"ok": False, "error": str(e)}
 
 
 # ── Telegram webhook ──────────────────────────────────────────────────────────
