@@ -227,6 +227,7 @@ select.inp option{background:var(--bg);}
 .tdel{background:none;border:none;font-size:18px;color:rgba(128,128,128,.25);cursor:pointer;padding:0 2px;}
 .tedit{background:none;border:none;font-size:16px;color:var(--accent);cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .2s;}
 .tedit:active{background:var(--accent);color:var(--bg);transform:scale(.95);}
+.hab-note{margin-top:3px;cursor:pointer;padding:2px 0;min-height:16px;}
 .dpopup{position:absolute;top:52px;right:0;width:260px;background:var(--bg);border-radius:var(--r);box-shadow:0 8px 32px rgba(0,0,0,.18);border:.5px solid rgba(128,128,128,.18);z-index:250;max-height:320px;overflow-y:auto;}
 .dpopup.gone{display:none;}
 .dpopup-month{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--hint);padding:12px 14px 6px;}
@@ -1082,7 +1083,18 @@ function initG(){
 }
 
 function dk(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toISOString().slice(0,10);}
-function ensD(k){if(!S.g.days[k])S.g.days[k]={habs:{},tasks:[]};return S.g.days[k];}
+function ensD(k){if(!S.g.days[k])S.g.days[k]={habs:{},tasks:[],habNotes:{}};if(!S.g.days[k].habNotes)S.g.days[k].habNotes={};return S.g.days[k];}
+
+function editHabNote(habId){
+  const k=vKey();const d=ensD(k);
+  const cur=d.habNotes[habId]||'';
+  const val=prompt('Задача дня для этого пункта:',cur);
+  if(val===null)return;
+  if(val.trim())d.habNotes[habId]=val.trim();
+  else delete d.habNotes[habId];
+  TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
 function vKey(){
   if(dv==='today')return dk(0);
   if(dv==='tomorrow')return dk(1);
@@ -1408,13 +1420,26 @@ function renderGoals(){
     const customTime=S.g.habitTimes?.[id]||'';
     const linkId=S.g.habitLinks?.[id]||null;
     const linkG=linkId?S.g.week.find(x=>x.id===linkId):null;
+    // Goal chain: weekly → monthly → global
+    const wg=linkG;
+    const mg=wg&&wg.parentId?S.g.month.find(x=>x.id===wg.parentId):null;
+    const gg=mg&&mg.parentId?S.g.big.find(x=>x.id===mg.parentId):null;
+    const chainParts=[wg&&wg.name,mg&&mg.name,gg&&gg.name].filter(Boolean);
+    const chain=chainParts.length?chainParts.join(' → '):null;
+    const dailyNote=day.habNotes?.[id]||'';
     const delFn=isCustom?'delCustomHab':'hideHab';
     return '<div class="ti" onclick="toggleHab(\''+id+'\')">'+
       '<div class="tchk'+(done?' done':'')+'"></div>'+
       '<div style="font-size:18px;flex-shrink:0;">'+icon+'</div>'+
-      '<div class="tbody"><div class="tname'+(done?' x':'')+'">'+name+'</div>'+
-      (customTime?'<div class="tsub" style="color:var(--accent);font-weight:500;">⏰ '+customTime+'</div>':'<div class="tsub">'+sub+'</div>')+
-      (linkG?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;">→ '+linkG.name+'</div>':'')+
+      '<div class="tbody">'+
+        '<div class="tname'+(done?' x':'')+'">'+name+'</div>'+
+        (customTime?'<div class="tsub" style="color:var(--accent);font-weight:500;">⏰ '+customTime+'</div>':'<div class="tsub" style="font-size:11px;color:var(--hint);">'+sub+'</div>')+
+        '<div class="hab-note" onclick="event.stopPropagation();editHabNote(\''+id+'\')">'+
+          (dailyNote
+            ?'<span style="color:var(--amber);">📌 '+dailyNote+'</span>'
+            :'<span style="color:var(--hint);font-size:11px;">+ задача дня</span>')+
+        '</div>'+
+        (chain?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;font-size:10px;">'+chain+'</div>':'')+
       '</div><div class="tright" style="display:flex;gap:2px;align-items:center;">'+(streak>=2?'<div class="tstreak">'+streak+'д</div>':'')+
       '<button class="tedit" onclick="event.stopPropagation();openHabEdit(\''+id+'\','+isCustom+')">✎</button>'+
       '<button class="tdel" onclick="event.stopPropagation();'+delFn+'(\''+id+'\')" style="color:var(--red);font-size:18px;padding:0 4px;">×</button>'+
