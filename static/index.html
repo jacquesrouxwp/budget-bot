@@ -250,6 +250,18 @@ select.inp option{background:var(--bg);}
 .wd-c.fut{opacity:.3;}
 .stabs{display:flex;gap:5px;margin-bottom:14px;}
 .stab{flex:1;padding:8px;border:none;border-radius:var(--rsm);background:var(--bg2);font-size:12px;font-weight:600;color:var(--hint);cursor:pointer;text-align:center;font-family:inherit;}
+/* GOAL TABLE */
+.gtable{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px;}
+.gcol{background:var(--bg2);border-radius:var(--rsm);padding:10px 8px;min-width:0;}
+.gcol-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gcol-item{margin-bottom:7px;cursor:pointer;}
+.gcol-item:last-child{margin-bottom:0;}
+.gcol-name{font-size:11px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gcol-bar{height:3px;background:rgba(128,128,128,.15);border-radius:2px;margin-top:4px;overflow:hidden;}
+.gcol-fill{height:100%;border-radius:2px;transition:width .4s;}
+.gcol-pct{font-size:9px;color:var(--hint);margin-top:2px;}
+.gcol-add{font-size:11px;color:var(--accent);cursor:pointer;margin-top:6px;padding:4px 0;border-top:.5px solid rgba(128,128,128,.1);}
+.gcol-empty{font-size:10px;color:var(--hint);opacity:.6;padding:4px 0;}
 .stab.on{background:var(--text);color:var(--bg);}
 .gc{background:var(--bg2);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;}
 .gc-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
@@ -637,10 +649,14 @@ select.inp option{background:var(--bg);}
 
 <!-- GOALS -->
 <div class="screen" id="screen-goals">
-  <div style="margin-bottom:14px;">
+  <div style="margin-bottom:10px;">
     <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Планирование</div>
     <div style="font-size:22px;font-weight:700;" id="g-title">Сегодня</div>
   </div>
+
+  <!-- GOAL TABLE -->
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:8px;">Фронт целей</div>
+  <div class="gtable" id="goal-table"></div>
 
   <div class="dtab" id="dtab" style="display:flex;gap:8px;padding:0 4px;position:relative;">
     <button class="on" id="dtab-today" onclick="setDay('today',this)">Сегодня</button>
@@ -681,8 +697,9 @@ select.inp option{background:var(--bg);}
   <div class="wdots" id="wdots"></div>
 
   <div class="stabs">
-    <button class="stab on" onclick="setScope('week',this)">Недельные</button>
-    <button class="stab" onclick="setScope('month',this)">Месячные</button>
+    <button class="stab on" onclick="setScope('week',this)">Неделя</button>
+    <button class="stab" onclick="setScope('month',this)">Месяц</button>
+    <button class="stab" onclick="setScope('quarter',this)">Квартал</button>
     <button class="stab" onclick="setScope('global',this)">Глобальные</button>
   </div>
 
@@ -1086,6 +1103,7 @@ function initG(){
     days:{},
     week:[],
     month:[],
+    quarter:[],
     big:[
       {id:1,name:'Закрыть долг',current:0,target:DEBT0,unit:'€',color:'#E24B4A',parentId:null},
       {id:2,name:'Подушка безопасности',current:0,target:CTGT,unit:'€',color:'#1D9E75',parentId:null},
@@ -1095,11 +1113,12 @@ function initG(){
     habitNotifs:{},
     customHabs:[],
     hiddenHabs:[],
-    habitLinks:{},   // {habId: weekGoalId}
-    ws:'',ms:''
+    habitLinks:{},
+    ws:'',ms:'',qs:''
   };
   if(!S.g.customHabs)S.g.customHabs=[];
   if(!S.g.hiddenHabs)S.g.hiddenHabs=[];
+  if(!S.g.quarter)S.g.quarter=[];
   if(!S.g.habitLinks)S.g.habitLinks={};
 }
 
@@ -1166,13 +1185,19 @@ function vKey(){
 }
 
 function chkWeek(){
-  const n=new Date(),m=new Date(n);m.setDate(n.getDate()-((n.getDay()+6)%7));m.setHours(0,0,0,0);
+  // Week starts Sunday
+  const n=new Date(),m=new Date(n);m.setDate(n.getDate()-n.getDay());m.setHours(0,0,0,0);
   const ms=m.toISOString().slice(0,10);
   if(S.g.ws!==ms){S.g.ws=ms;S.g.week.forEach(g=>{g.current=0;});}
 }
 function chkMonth(){
   const ms=new Date().toISOString().slice(0,7);
   if(S.g.ms!==ms){S.g.ms=ms;S.g.month.forEach(g=>{g.current=0;});}
+}
+function chkQuarter(){
+  const n=new Date();
+  const qs=n.getFullYear()+'Q'+Math.ceil((n.getMonth()+1)/3);
+  if(S.g.qs!==qs){S.g.qs=qs;(S.g.quarter||[]).forEach(g=>{g.current=0;});}
 }
 
 function setDay(v,el){
@@ -1397,7 +1422,7 @@ function addGoal(){
   const unit=document.getElementById('ap-unit').value.trim()||'раз';
   const parentId=parseInt(document.getElementById('ap-parent').value)||null;
   if(!name||!target)return;
-  const list=sv==='week'?S.g.week:sv==='month'?S.g.month:S.g.big;
+  const list=sv==='week'?S.g.week:sv==='month'?S.g.month:sv==='quarter'?(S.g.quarter||(S.g.quarter=[])):S.g.big;
   const col=COLORS[list.length%COLORS.length];
   list.push({id:Date.now(),name,target,current:0,unit,color:col,parentId});
   document.getElementById('ap-name').value='';
@@ -1409,7 +1434,7 @@ function addGoal(){
 }
 
 function updG(scope,id,delta){
-  const list=scope==='week'?S.g.week:scope==='month'?S.g.month:S.g.big;
+  const list=scope==='week'?S.g.week:scope==='month'?S.g.month:scope==='quarter'?(S.g.quarter||[]):S.g.big;
   const g=list.find(x=>x.id===id);
   if(g){g.current=Math.max(0,Math.min(g.target,(g.current||0)+delta));}
   TG?.HapticFeedback?.impactOccurred('light');
@@ -1419,6 +1444,7 @@ function updG(scope,id,delta){
 function delG(scope,id){
   if(scope==='week')S.g.week=S.g.week.filter(x=>x.id!==id);
   else if(scope==='month')S.g.month=S.g.month.filter(x=>x.id!==id);
+  else if(scope==='quarter')S.g.quarter=(S.g.quarter||[]).filter(x=>x.id!==id);
   else S.g.big=S.g.big.filter(x=>x.id!==id);
   saveS();renderGoals();
 }
@@ -1442,7 +1468,8 @@ function parentName(parentId,scope){
   if(!parentId)return null;
   let list;
   if(scope==='week')list=S.g.month;
-  else if(scope==='month')list=S.g.big;
+  else if(scope==='month')list=S.g.quarter||[];
+  else if(scope==='quarter')list=S.g.big;
   else return null;
   const p=list.find(x=>x.id===parentId);
   return p?p.name:null;
@@ -1450,15 +1477,56 @@ function parentName(parentId,scope){
 
 function childGoals(parentId,scope){
   let list;
-  if(scope==='global')list=S.g.month;
+  if(scope==='global')list=S.g.quarter||[];
+  else if(scope==='quarter')list=S.g.month;
   else if(scope==='month')list=S.g.week;
   else return[];
   return list.filter(g=>g.parentId===parentId);
 }
 
+function renderGoalTable(){
+  if(!S.g)return;
+  const cols=[
+    {key:'week',  label:'Неделя',   list:S.g.week||[],   color:'#378ADD'},
+    {key:'month', label:'Месяц',    list:S.g.month||[],  color:'#7F77DD'},
+    {key:'quarter',label:'Квартал', list:S.g.quarter||[],color:'#EF9F27'},
+    {key:'big',   label:'Глобальные',list:S.g.big||[],   color:'#1D9E75'},
+  ];
+  const el=document.getElementById('goal-table');
+  if(!el)return;
+  el.innerHTML=cols.map(col=>{
+    const items=col.list.map(g=>{
+      const pct=g.target>0?Math.min(100,Math.round((g.current||0)/g.target*100)):0;
+      const c=g.color||col.color;
+      return '<div class="gcol-item" onclick="goToScope(\''+col.key+'\')">'+
+        '<div class="gcol-name" style="color:'+c+';" title="'+g.name+'">'+g.name+'</div>'+
+        '<div class="gcol-bar"><div class="gcol-fill" style="width:'+pct+'%;background:'+c+';"></div></div>'+
+        '<div class="gcol-pct">'+pct+'%'+(g.unit?' · '+g.current+'/'+g.target+' '+g.unit:'')+'</div>'+
+      '</div>';
+    }).join('');
+    return '<div class="gcol">'+
+      '<div class="gcol-hdr">'+col.label+'</div>'+
+      (items||'<div class="gcol-empty">Нет целей</div>')+
+      '<div class="gcol-add" onclick="quickAddGoal(\''+col.key+'\')">+ добавить</div>'+
+    '</div>';
+  }).join('');
+}
+
+function goToScope(scope){
+  const scopeMap={week:'week',month:'month',quarter:'quarter',big:'global'};
+  sv=scopeMap[scope]||scope;
+  document.querySelectorAll('.stab').forEach(b=>b.classList.remove('on'));
+  const idx={week:0,month:1,quarter:2,global:3}[sv];
+  document.querySelectorAll('.stab')[idx]?.classList.add('on');
+  renderGoals();
+  document.getElementById('scope-list')?.scrollIntoView({behavior:'smooth'});
+}
+
+function quickAddGoal(scope){goToScope(scope);document.getElementById('ap-btn')?.click();}
+
 function renderGoals(){
   if(!S.g)initG();
-  chkWeek();chkMonth();
+  chkWeek();chkMonth();chkQuarter();
   const DN=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
   const DL=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
   const MS=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
@@ -1491,8 +1559,9 @@ function renderGoals(){
     const activeGoalId=noteGoalId||fallbackGoalId;
     const wg=activeGoalId?S.g.week.find(x=>x.id===activeGoalId):null;
     const mg=wg&&wg.parentId?S.g.month.find(x=>x.id===wg.parentId):null;
-    const gg=mg&&mg.parentId?S.g.big.find(x=>x.id===mg.parentId):null;
-    const chainParts=[wg&&wg.name,mg&&mg.name,gg&&gg.name].filter(Boolean);
+    const qg=mg&&mg.parentId?(S.g.quarter||[]).find(x=>x.id===mg.parentId):null;
+    const gg=(qg||mg)&&((qg||mg).parentId)?S.g.big.find(x=>x.id===(qg||mg).parentId):null;
+    const chainParts=[wg&&wg.name,mg&&mg.name,qg&&qg.name,gg&&gg.name].filter(Boolean);
     const chain=chainParts.length?chainParts.join(' → '):null;
     const delFn=isCustom?'delCustomHab':'hideHab';
     return '<div class="ti" onclick="toggleHab(\''+id+'\')">'+
@@ -1591,10 +1660,11 @@ function renderGoals(){
   const cg=S.g.big.find(x=>x.id===2);if(cg)cg.current=S.cush||0;
 
   renderScope();
+  renderGoalTable();
 }
 
 function renderScope(){
-  const list=sv==='week'?S.g.week:sv==='month'?S.g.month:S.g.big;
+  const list=sv==='week'?S.g.week:sv==='month'?S.g.month:sv==='quarter'?(S.g.quarter||[]):S.g.big;
   const el=document.getElementById('scope-list');
   const scope=sv;
   const isBI=(g)=>scope==='global'&&(g.id===1||g.id===2);
