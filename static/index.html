@@ -363,6 +363,27 @@ select.inp option{background:var(--bg);}
   </div>
 </div>
 
+<!-- DAILY TASK NOTE MODAL -->
+<div class="modal-bg gone" id="hab-note-modal">
+  <div class="modal">
+    <button class="mclose" onclick="closeModal('hab-note-modal')">×</button>
+    <div class="modal-title" id="hab-note-title">Задача дня</div>
+    <div class="mrow">
+      <input class="inp" type="text" id="hab-note-text" placeholder="Что конкретно сделать..." maxlength="80" style="flex:1;">
+    </div>
+    <div class="mrow">
+      <select class="inp" id="hab-note-goal" style="flex:1;font-size:13px;">
+        <option value="">Без привязки к недельной цели</option>
+      </select>
+    </div>
+    <div style="font-size:11px;color:var(--hint);margin:4px 0 12px;line-height:1.5;" id="hab-note-chain"></div>
+    <div class="mrow" style="gap:8px;">
+      <button class="mbtn" onclick="clearHabNote()" style="flex:1;background:var(--bg2);color:var(--red);">Удалить</button>
+      <button class="mbtn green" onclick="saveHabNote()" style="flex:2;">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADD CHECKLIST ITEM MODAL -->
 <div class="modal-bg gone" id="add-hab-modal">
   <div class="modal">
@@ -1086,13 +1107,54 @@ function dk(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toI
 function ensD(k){if(!S.g.days[k])S.g.days[k]={habs:{},tasks:[],habNotes:{}};if(!S.g.days[k].habNotes)S.g.days[k].habNotes={};return S.g.days[k];}
 
 function editHabNote(habId){
+  window.currentNoteHabId=habId;
   const k=vKey();const d=ensD(k);
-  const cur=d.habNotes[habId]||'';
-  const val=prompt('Задача дня для этого пункта:',cur);
-  if(val===null)return;
-  if(val.trim())d.habNotes[habId]=val.trim();
+  const note=d.habNotes[habId]||{};
+  // Find hab name
+  const base=HAB.find(x=>x.id===habId);
+  const cust=(S.g.customHabs||[]).find(x=>x.id===habId);
+  const habName=(S.g.habitNames?.[habId])||(base||cust)?.name||'Привычка';
+  document.getElementById('hab-note-title').textContent='Задача дня: '+habName;
+  document.getElementById('hab-note-text').value=note.text||'';
+  // Populate weekly goals
+  const gSel=document.getElementById('hab-note-goal');
+  gSel.innerHTML='<option value="">Без привязки к цели</option>'+
+    (S.g.week||[]).map(g=>'<option value="'+g.id+'" style="color:'+g.color+'">→ '+g.name+'</option>').join('');
+  gSel.value=note.goalId||'';
+  updateNoteChain(note.goalId||'');
+  gSel.onchange=()=>updateNoteChain(gSel.value);
+  openModal('hab-note-modal');
+}
+
+function updateNoteChain(goalId){
+  const el=document.getElementById('hab-note-chain');
+  if(!goalId){el.textContent='';return;}
+  const gid=parseInt(goalId);
+  const wg=S.g.week.find(x=>x.id===gid);
+  if(!wg){el.textContent='';return;}
+  const mg=wg.parentId?S.g.month.find(x=>x.id===wg.parentId):null;
+  const gg=mg&&mg.parentId?S.g.big.find(x=>x.id===mg.parentId):null;
+  const parts=[wg.name,mg&&mg.name,gg&&gg.name].filter(Boolean);
+  el.textContent='Цепочка: '+parts.join(' → ');
+}
+
+function saveHabNote(){
+  const habId=window.currentNoteHabId;if(!habId)return;
+  const text=document.getElementById('hab-note-text').value.trim();
+  const goalId=parseInt(document.getElementById('hab-note-goal').value)||null;
+  const k=vKey();const d=ensD(k);
+  if(text)d.habNotes[habId]={text,goalId};
   else delete d.habNotes[habId];
+  closeModal('hab-note-modal');
   TG?.HapticFeedback?.impactOccurred('light');
+  saveS();renderGoals();
+}
+
+function clearHabNote(){
+  const habId=window.currentNoteHabId;if(!habId)return;
+  const k=vKey();const d=ensD(k);
+  delete d.habNotes[habId];
+  closeModal('hab-note-modal');
   saveS();renderGoals();
 }
 function vKey(){
@@ -1165,7 +1227,10 @@ function toggleHab(id){
   const k=vKey(),d=ensD(k);
   const was=!!d.habs[id];
   d.habs[id]=!was;
-  const linkId=S.g.habitLinks?.[id]||null;
+  // Goal link: daily note's goalId takes priority over direct habitLinks
+  const noteObj=d.habNotes?.[id];
+  const noteGoalId=noteObj&&typeof noteObj==='object'?noteObj.goalId:null;
+  const linkId=noteGoalId||S.g.habitLinks?.[id]||null;
   if(linkId){const g=S.g.week.find(x=>x.id===linkId);if(g){if(!was&&g.current<g.target)g.current++;else if(was&&g.current>0)g.current--;}}
   TG?.HapticFeedback?.impactOccurred('light');
   saveS();renderGoals();
@@ -1418,15 +1483,17 @@ function renderGoals(){
   const custom=S.g.customHabs||[];
   function renderHabItem(id,icon,name,sub,done,streak,isCustom){
     const customTime=S.g.habitTimes?.[id]||'';
-    const linkId=S.g.habitLinks?.[id]||null;
-    const linkG=linkId?S.g.week.find(x=>x.id===linkId):null;
-    // Goal chain: weekly → monthly → global
-    const wg=linkG;
+    const noteObj=day.habNotes?.[id]||null;
+    const dailyNote=noteObj?(typeof noteObj==='string'?noteObj:noteObj.text||''):'';
+    // Goal chain comes from the daily note's goalId (чек-лист → задача дня → цели)
+    const noteGoalId=noteObj&&typeof noteObj==='object'?noteObj.goalId:null;
+    const fallbackGoalId=S.g.habitLinks?.[id]||null;
+    const activeGoalId=noteGoalId||fallbackGoalId;
+    const wg=activeGoalId?S.g.week.find(x=>x.id===activeGoalId):null;
     const mg=wg&&wg.parentId?S.g.month.find(x=>x.id===wg.parentId):null;
     const gg=mg&&mg.parentId?S.g.big.find(x=>x.id===mg.parentId):null;
     const chainParts=[wg&&wg.name,mg&&mg.name,gg&&gg.name].filter(Boolean);
     const chain=chainParts.length?chainParts.join(' → '):null;
-    const dailyNote=day.habNotes?.[id]||'';
     const delFn=isCustom?'delCustomHab':'hideHab';
     return '<div class="ti" onclick="toggleHab(\''+id+'\')">'+
       '<div class="tchk'+(done?' done':'')+'"></div>'+
@@ -1439,7 +1506,7 @@ function renderGoals(){
             ?'<span style="color:var(--amber);">📌 '+dailyNote+'</span>'
             :'<span style="color:var(--hint);font-size:11px;">+ задача дня</span>')+
         '</div>'+
-        (chain?'<div class="tlink" style="background:'+linkG.color+'22;color:'+linkG.color+';margin-top:3px;font-size:10px;">'+chain+'</div>':'')+
+        (chain?'<div class="tlink" style="background:'+(wg?wg.color:'#888')+'22;color:'+(wg?wg.color:'#888')+';margin-top:3px;font-size:10px;">'+chain+'</div>':'')+
       '</div><div class="tright" style="display:flex;gap:2px;align-items:center;">'+(streak>=2?'<div class="tstreak">'+streak+'д</div>':'')+
       '<button class="tedit" onclick="event.stopPropagation();openHabEdit(\''+id+'\','+isCustom+')">✎</button>'+
       '<button class="tdel" onclick="event.stopPropagation();'+delFn+'(\''+id+'\')" style="color:var(--red);font-size:18px;padding:0 4px;">×</button>'+
