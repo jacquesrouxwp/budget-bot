@@ -108,6 +108,25 @@ input.big:focus{box-shadow:0 0 0 2px var(--accent);}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-end;}
 .modal-bg.gone{display:none;}
 .modal{background:var(--bg);border-radius:24px 24px 0 0;padding:20px 20px 36px;width:100%;}
+/* AI Chat */
+.ai-fab{position:fixed;bottom:72px;right:16px;z-index:190;width:48px;height:48px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;font-size:22px;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;transition:transform .15s;}
+.ai-fab:active{transform:scale(.92);}
+.ai-modal{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;background:var(--bg);}
+.ai-modal.gone{display:none;}
+.ai-hdr{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;border-bottom:.5px solid rgba(128,128,128,.12);}
+.ai-hdr-title{flex:1;font-size:16px;font-weight:700;}
+.ai-messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px;}
+.ai-msg{max-width:82%;padding:10px 13px;border-radius:16px;font-size:14px;line-height:1.4;}
+.ai-msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px;}
+.ai-msg.bot{align-self:flex-start;background:var(--bg2);color:var(--ink);border-bottom-left-radius:4px;}
+.ai-msg.typing{opacity:.55;}
+.ai-actions-done{font-size:11px;color:var(--green);margin-top:4px;}
+.ai-inp-row{display:flex;gap:8px;padding:10px 12px 20px;border-top:.5px solid rgba(128,128,128,.12);}
+.ai-inp{flex:1;background:var(--bg2);border:none;border-radius:20px;padding:10px 14px;font-size:14px;color:var(--ink);outline:none;}
+.ai-send{background:var(--accent);border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:18px;flex-shrink:0;}
+.ai-mic{background:var(--bg2);border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:18px;flex-shrink:0;transition:background .2s;}
+.ai-mic.recording{background:#E24B4A;animation:pulse .8s infinite alternate;}
+@keyframes pulse{from{transform:scale(1);}to{transform:scale(1.12);}}
 .modal-title{font-size:18px;font-weight:700;margin-bottom:18px;}
 .mrow{display:flex;gap:8px;margin-bottom:10px;}
 .mrow:last-child{margin-bottom:0;}
@@ -251,9 +270,20 @@ select.inp option{background:var(--bg);}
 .stabs{display:flex;gap:5px;margin-bottom:14px;}
 .stab{flex:1;padding:8px;border:none;border-radius:var(--rsm);background:var(--bg2);font-size:12px;font-weight:600;color:var(--hint);cursor:pointer;text-align:center;font-family:inherit;}
 /* GOAL TABLE */
+.dverse{background:linear-gradient(135deg,#1D9E7515 0%,#378ADD15 100%);border-left:3px solid var(--accent);border-radius:var(--rsm);padding:12px 14px;margin-bottom:12px;}
+.dverse-text{font-size:13px;line-height:1.45;color:var(--ink);font-style:italic;}
+.dverse-src{font-size:10px;color:var(--hint);margin-top:6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;}
+.dfocus{background:var(--bg2);border-radius:var(--rsm);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;}
+.dfocus-icon{font-size:24px;flex-shrink:0;}
+.dfocus-body{flex:1;min-width:0;}
+.dfocus-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--hint);margin-bottom:2px;}
+.dfocus-name{font-size:15px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dfocus-prog{font-size:11px;color:var(--hint);margin-top:2px;}
+.dfocus-pct{font-size:22px;font-weight:700;letter-spacing:-.02em;flex-shrink:0;}
 .gtable{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px;}
 .gcol{background:var(--bg2);border-radius:var(--rsm);padding:10px 8px;min-width:0;}
-.gcol-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gcol-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:4px;display:flex;flex-direction:column;gap:2px;}
+.gcol-pct-big{font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1;}
 .gcol-item{margin-bottom:7px;cursor:pointer;}
 .gcol-item:last-child{margin-bottom:0;}
 .gcol-name{font-size:11px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -649,10 +679,16 @@ select.inp option{background:var(--bg);}
 
 <!-- GOALS -->
 <div class="screen" id="screen-goals">
-  <div style="margin-bottom:10px;">
+  <div style="margin-bottom:14px;">
     <div style="font-size:12px;color:var(--hint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;">Планирование</div>
     <div style="font-size:22px;font-weight:700;" id="g-title">Сегодня</div>
   </div>
+
+  <!-- DAILY VERSE CARD -->
+  <div class="dverse" id="d-verse"></div>
+
+  <!-- TODAY'S FOCUS -->
+  <div class="dfocus" id="d-focus"></div>
 
   <!-- GOAL TABLE -->
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:8px;">Фронт целей</div>
@@ -674,11 +710,14 @@ select.inp option{background:var(--bg);}
       </div>
       <div class="dscore">
         <div class="dscore-n" id="d-score">0/0</div>
-        <div class="dscore-l">выполнено</div>
+        <div class="dscore-l" id="d-score-l">выполнено</div>
       </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;">Чек-лист</div>
+      <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="toggleHabList()">
+        <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;">Чек-лист</div>
+        <span id="hab-toggle-icon" style="font-size:12px;color:var(--hint);transition:transform .2s;">▲</span>
+      </div>
       <button onclick="openAddHab()" style="background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:2px 6px;">+ Добавить</button>
     </div>
     <div id="hab-list"></div>
@@ -731,6 +770,26 @@ select.inp option{background:var(--bg);}
   <button class="nb" onclick="goTo('plan',this)"><span class="ni">◈</span>План</button>
   <button class="nb" onclick="goTo('settings',this)"><span class="ni">◉</span>Данные</button>
 </nav>
+
+<!-- AI ASSISTANT FAB -->
+<button class="ai-fab" onclick="openAI()" title="Ассистент">🤖</button>
+
+<!-- AI CHAT MODAL -->
+<div class="ai-modal gone" id="ai-modal">
+  <div class="ai-hdr">
+    <div style="font-size:22px;">🤖</div>
+    <div class="ai-hdr-title">Ассистент</div>
+    <button onclick="closeAI()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--hint);">×</button>
+  </div>
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-msg bot">Привет! Скажи что сделать — отмечу чеклист, добавлю задачу или напомню о целях 🎯</div>
+  </div>
+  <div class="ai-inp-row">
+    <input class="ai-inp" id="ai-inp" placeholder="Напиши команду..." onkeydown="if(event.key==='Enter')sendAI()">
+    <button class="ai-mic" id="ai-mic" onclick="toggleVoice()" title="Голос">🎤</button>
+    <button class="ai-send" onclick="sendAI()">➤</button>
+  </div>
+</div>
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
@@ -1092,9 +1151,31 @@ const HAB=[
   {id:'h4',name:'Работа',sub:'Дисциплина приносит результат',icon:'💼'},
   {id:'h5',name:'Дом',sub:'Порядок вокруг — порядок внутри',icon:'🏠'},
   {id:'h6',name:'Проект',sub:'Шаг к большой мечте',icon:'💻'},
+  {id:'h9',name:'Служение',sub:'17:00–22:00 · Церковь',icon:'⛪'},
   {id:'h7',name:'Молитва (вечерняя)',sub:'Благодарность за день',icon:'🌙'},
   {id:'h8',name:'Сон',sub:'Восстановление для новых побед',icon:'🛌'},
 ];
+
+// Days off (no work): specific dates + auto-computed from state
+const FIXED_OFF=['2025-05-03','2025-05-06','2025-05-07','2025-05-14','2025-05-15',
+  '2025-05-18','2025-05-23','2025-05-28','2025-05-29'];
+// Service evenings: Wed=3, Sat=6, Sun=0
+const SERVICE_DAYS=[0,3,6];
+
+function getDayProfile(dateStr){
+  const off=[...FIXED_OFF,...(S.g.offDates||[])];
+  if(off.includes(dateStr))return 'dayoff';
+  const d=new Date(dateStr+'T12:00:00');
+  if(SERVICE_DAYS.includes(d.getDay()))return 'service';
+  return 'regular';
+}
+
+// HAB ids hidden per profile
+const PROFILE_HIDDEN={
+  regular:['h9'],              // hide Служение on regular days
+  service:['h4'],              // hide Работа on service days (Wed/Sat/Sun)
+  dayoff: ['h4','h9'],         // hide Работа + Служение on days off
+};
 let dv='today',sv='week';
 const COLORS=['#378ADD','#7F77DD','#EF9F27','#D85A30','#1D9E75','#E24B4A','#888780'];
 
@@ -1120,6 +1201,15 @@ function initG(){
   if(!S.g.hiddenHabs)S.g.hiddenHabs=[];
   if(!S.g.quarter)S.g.quarter=[];
   if(!S.g.habitLinks)S.g.habitLinks={};
+  // Seed default week goals if not yet added
+  if(!S.g.week)S.g.week=[];
+  const wids=S.g.week.map(x=>x.id);
+  if(!wids.includes(101))S.g.week.push({id:101,name:'Разработка приложения',current:0,target:5,unit:'дней',color:'#378ADD',parentId:null});
+  if(!wids.includes(102))S.g.week.push({id:102,name:'Зал',current:0,target:3,unit:'раз',color:'#EF9F27',parentId:null});
+  if(!wids.includes(103))S.g.week.push({id:103,name:'Библия каждый день',current:0,target:7,unit:'дней',color:'#1D9E75',parentId:null});
+  S.g.habitLinks['h6']=101; // Проект → Разработка приложения
+  S.g.habitLinks['h3']=102; // Зал → Зал
+  S.g.habitLinks['h1']=103; // Молитва утренняя → Библия
 }
 
 function dk(off){const d=new Date();d.setDate(d.getDate()+(off||0));return d.toISOString().slice(0,10);}
@@ -1185,8 +1275,10 @@ function vKey(){
 }
 
 function chkWeek(){
-  // Week starts Sunday
-  const n=new Date(),m=new Date(n);m.setDate(n.getDate()-n.getDay());m.setHours(0,0,0,0);
+  // Week starts Monday
+  const n=new Date(),m=new Date(n);
+  const dow=n.getDay()||7; // Mon=1..Sun=7
+  m.setDate(n.getDate()-dow+1);m.setHours(0,0,0,0);
   const ms=m.toISOString().slice(0,10);
   if(S.g.ws!==ms){S.g.ws=ms;S.g.week.forEach(g=>{g.current=0;});}
 }
@@ -1289,6 +1381,14 @@ function delTask(tid){
   if(t&&t.done&&t.linkId){const g=S.g.week.find(x=>x.id===t.linkId);if(g&&g.current>0)g.current--;}
   d.tasks=d.tasks.filter(x=>x.id!==tid);
   saveS();renderGoals();
+}
+
+function toggleHabList(){
+  const list=document.getElementById('hab-list');
+  const icon=document.getElementById('hab-toggle-icon');
+  const collapsed=list.style.display==='none';
+  list.style.display=collapsed?'':'none';
+  icon.style.transform=collapsed?'':'rotate(180deg)';
 }
 
 function openAddHab(){
@@ -1484,6 +1584,59 @@ function childGoals(parentId,scope){
   return list.filter(g=>g.parentId===parentId);
 }
 
+const VERSES=[
+  {text:'И всё, что делаете, делайте от души, как для Господа, а не для человеков.',src:'Колоссянам 3:23'},
+  {text:'Не заботьтесь о завтрашнем дне, ибо завтрашний сам будет заботиться о своём.',src:'Матфея 6:34'},
+  {text:'Всё могу в укрепляющем меня Иисусе Христе.',src:'Филиппийцам 4:13'},
+  {text:'Доверь Господу дела твои, и предприятия твои совершатся.',src:'Притчи 16:3'},
+  {text:'Должник делается рабом заимодавца. Будь свободен — отдавай.',src:'Притчи 22:7'},
+  {text:'Кто верен в малом, тот и во многом верен.',src:'Луки 16:10'},
+  {text:'Не уставайте делать добро, ибо в своё время пожнём, если не ослабеем.',src:'Галатам 6:9'},
+  {text:'Утром сей семя твоё, и вечером не давай отдыха руке твоей.',src:'Екклесиаст 11:6'},
+  {text:'Господь — пастырь мой; я ни в чём не буду нуждаться.',src:'Псалом 22:1'},
+  {text:'Положись на Господа всем сердцем твоим, и не полагайся на разум твой.',src:'Притчи 3:5'},
+  {text:'Дисциплина — мост между целями и достижениями.',src:'Джим Рон'},
+  {text:'Маленькие ежедневные шаги создают большие изменения.',src:'мудрость'},
+  {text:'Сделай сегодня то, за что завтра скажешь себе спасибо.',src:'мудрость'},
+  {text:'Богатство — это не сколько имеешь, а сколько не должен.',src:'мудрость'},
+];
+
+function renderDailyVerse(){
+  const el=document.getElementById('d-verse');
+  if(!el)return;
+  const today=new Date();
+  const dayNum=Math.floor((today-new Date(today.getFullYear(),0,0))/86400000);
+  const v=VERSES[dayNum%VERSES.length];
+  el.innerHTML='<div class="dverse-text">"'+v.text+'"</div>'+
+               '<div class="dverse-src">— '+v.src+'</div>';
+}
+
+function renderTodayFocus(){
+  const el=document.getElementById('d-focus');
+  if(!el)return;
+  // Find weekly goal that's most behind (lowest % but with target>0)
+  const week=(S.g?.week||[]).filter(g=>g.target>0);
+  if(week.length===0){el.style.display='none';return;}
+  el.style.display='flex';
+  // Pick goal with most "remaining" — encourages tackling biggest gap
+  const focus=week.reduce((best,g)=>{
+    const pctG=(g.current||0)/g.target;
+    const pctB=(best.current||0)/best.target;
+    return pctG<pctB?g:best;
+  },week[0]);
+  const pct=Math.round((focus.current||0)/focus.target*100);
+  const remaining=focus.target-(focus.current||0);
+  const c=focus.color||'#378ADD';
+  el.innerHTML=
+    '<div class="dfocus-icon">🎯</div>'+
+    '<div class="dfocus-body">'+
+      '<div class="dfocus-label">Главный фокус недели</div>'+
+      '<div class="dfocus-name" style="color:'+c+';">'+focus.name+'</div>'+
+      '<div class="dfocus-prog">осталось '+remaining+' '+(focus.unit||'')+' до конца недели</div>'+
+    '</div>'+
+    '<div class="dfocus-pct" style="color:'+c+';">'+pct+'%</div>';
+}
+
 function renderGoalTable(){
   if(!S.g)return;
   const cols=[
@@ -1504,8 +1657,15 @@ function renderGoalTable(){
         '<div class="gcol-pct">'+pct+'%'+(g.unit?' · '+g.current+'/'+g.target+' '+g.unit:'')+'</div>'+
       '</div>';
     }).join('');
+    const totalCur=col.list.reduce((s,g)=>s+(g.current||0),0);
+    const totalTgt=col.list.reduce((s,g)=>s+(g.target||0),0);
+    const colPct=totalTgt>0?Math.min(100,Math.round(totalCur/totalTgt*100)):0;
+    const colColor=col.color;
     return '<div class="gcol">'+
-      '<div class="gcol-hdr">'+col.label+'</div>'+
+      '<div class="gcol-hdr">'+
+        '<span>'+col.label+'</span>'+
+        '<span class="gcol-pct-big" style="color:'+colColor+';">'+colPct+'%</span>'+
+      '</div>'+
       (items||'<div class="gcol-empty">Нет целей</div>')+
       '<div class="gcol-add" onclick="quickAddGoal(\''+col.key+'\')">+ добавить</div>'+
     '</div>';
@@ -1540,8 +1700,11 @@ function renderGoals(){
   const dayPlan=isToday?'Чеклист дня':isTmrw?'План на завтра':'План дня';
   const titleLabel=isToday?'Сегодня':isTmrw?'Завтра':DL[vd.getDay()]+', '+vd.getDate()+' '+MS[vd.getMonth()];
 
+  const profile=getDayProfile(vk);
+  const profileHidden=PROFILE_HIDDEN[profile]||[];
+  const profileLabel=profile==='dayoff'?'🏖 Выходной':profile==='service'?'⛪ Служение':'';
   document.getElementById('g-title').textContent=isToday?'Сегодня':'Планирую';
-  document.getElementById('d-inner-title').textContent=dayPlan;
+  document.getElementById('d-inner-title').textContent=dayPlan+(profileLabel?' · '+profileLabel:'');
   document.getElementById('d-date').textContent=DL[vd.getDay()]+', '+vd.getDate()+' '+MS[vd.getMonth()];
 
   const day=ensD(vk);
@@ -1584,6 +1747,7 @@ function renderGoals(){
   let habHtml='';
   HAB.forEach(h=>{
     if(hidden.includes(h.id))return;
+    if(profileHidden.includes(h.id))return;
     const done=!!day.habs[h.id];
     const streak=isToday&&done?getStreak(h.id):0;
     const dispName=S.g.habitNames?.[h.id]||h.name;
@@ -1618,14 +1782,27 @@ function renderGoals(){
     '<option value="'+g.id+'" style="color:'+g.color+'">→ '+g.name+'</option>'
   ).join('');
 
-  const visibleBase=HAB.filter(h=>!hidden.includes(h.id));
+  const visibleBase=HAB.filter(h=>!hidden.includes(h.id)&&!profileHidden.includes(h.id));
   const hDone=visibleBase.filter(h=>!!day.habs[h.id]).length
     + custom.filter(c=>!!day.habs[c.id]).length;
   const tDone=day.tasks.filter(t=>t.done).length;
   const total=visibleBase.length+custom.length+day.tasks.length;
+  const done=hDone+tDone;
   const sc=document.getElementById('d-score');
-  sc.textContent=(hDone+tDone)+'/'+total;
-  sc.style.color=(hDone+tDone)===total&&total>0?'var(--green)':'var(--accent)';
+  sc.textContent=done+'/'+total;
+  sc.style.color=done===total&&total>0?'var(--green)':'var(--accent)';
+  const scL=document.getElementById('d-score-l');
+  if(scL){
+    const pct=total>0?done/total:0;
+    let label='выполнено';
+    if(total===0)label='пусто';
+    else if(pct===1)label='🔥 идеально!';
+    else if(pct>=0.7)label='💪 почти всё';
+    else if(pct>=0.4)label='в процессе';
+    else if(pct>0)label='начало есть';
+    else label='вперёд';
+    scL.textContent=label;
+  }
 
   const now=new Date();
   const mon=new Date(now);mon.setDate(now.getDate()-((now.getDay()+6)%7));mon.setHours(0,0,0,0);
@@ -1661,6 +1838,8 @@ function renderGoals(){
 
   renderScope();
   renderGoalTable();
+  renderDailyVerse();
+  renderTodayFocus();
 }
 
 function renderScope(){
@@ -1734,6 +1913,131 @@ document.addEventListener('click',function(e){
     }
   }
 });
+
+// ── Voice Input ──────────────────────────────────────────────────────────────
+let _recognition = null;
+let _isRecording = false;
+
+function toggleVoice(){
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRecognition){
+    aiAddMsg('Голосовой ввод не поддерживается в этом браузере 😕', 'bot');
+    return;
+  }
+  if(_isRecording){ _recognition?.stop(); return; }
+
+  _recognition = new SpeechRecognition();
+  _recognition.lang = 'ru-RU';
+  _recognition.interimResults = false;
+  _recognition.maxAlternatives = 1;
+
+  const mic = document.getElementById('ai-mic');
+  mic.classList.add('recording');
+  _isRecording = true;
+
+  _recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    document.getElementById('ai-inp').value = text;
+    sendAI();
+  };
+  _recognition.onerror = () => {
+    aiAddMsg('Не удалось распознать речь, попробуй ещё раз 🎤', 'bot');
+  };
+  _recognition.onend = () => {
+    mic.classList.remove('recording');
+    _isRecording = false;
+  };
+  _recognition.start();
+}
+
+// ── AI Assistant ──────────────────────────────────────────────────────────────
+function openAI(){
+  document.getElementById('ai-modal').classList.remove('gone');
+  document.getElementById('ai-inp').focus();
+}
+function closeAI(){
+  document.getElementById('ai-modal').classList.add('gone');
+}
+
+function aiAddMsg(text, role, actionsText){
+  const box = document.getElementById('ai-messages');
+  const div = document.createElement('div');
+  div.className = 'ai-msg ' + role;
+  div.innerHTML = text.replace(/\n/g,'<br>');
+  if(actionsText){
+    const a = document.createElement('div');
+    a.className = 'ai-actions-done';
+    a.textContent = actionsText;
+    div.appendChild(a);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+async function sendAI(){
+  const inp = document.getElementById('ai-inp');
+  const msg = inp.value.trim();
+  if(!msg) return;
+  inp.value = '';
+
+  aiAddMsg(msg, 'user');
+
+  const typing = aiAddMsg('...', 'bot typing');
+
+  try {
+    const headers = {'Content-Type':'application/json'};
+    if(INIT_DATA) headers['X-Init-Data'] = INIT_DATA;
+    const devParam = !INIT_DATA ? '?dev=1' : '';
+
+    const resp = await fetch(API_URL + '/api/chat' + devParam, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message: msg, state: S })
+    });
+    const data = await resp.json();
+
+    typing.remove();
+
+    const actions = data.actions || [];
+    const done = await executeAIActions(actions);
+
+    aiAddMsg(data.message || '...', 'bot', done.length ? '✓ ' + done.join(', ') : '');
+
+  } catch(e) {
+    typing.remove();
+    aiAddMsg('Ошибка связи 😕', 'bot');
+  }
+}
+
+async function executeAIActions(actions){
+  const done = [];
+  for(const a of actions){
+    try{
+      if(a.type === 'toggleHab'){
+        const k = vKey(); const d = ensD(k);
+        d.habs[a.id] = a.value;
+        const hb = HAB.find(x=>x.id===a.id) || (S.g.customHabs||[]).find(x=>x.id===a.id);
+        const nm = S.g.habitNames?.[a.id] || hb?.name || a.id;
+        done.push((a.value?'✓ ':'✗ ') + nm);
+      } else if(a.type === 'toggleTask'){
+        const k = vKey(); const d = ensD(k);
+        if(d.tasks[a.index]) d.tasks[a.index].done = a.value;
+        done.push((a.value?'✓ ':'○ ') + (d.tasks[a.index]?.name||'задача'));
+      } else if(a.type === 'addTask'){
+        const k = vKey(); const d = ensD(k);
+        d.tasks.push({name:a.name, done:false, id:Date.now(), linkId:null});
+        done.push('+ ' + a.name);
+      } else if(a.type === 'incGoal'){
+        const list = a.scope==='week'?S.g.week:a.scope==='month'?S.g.month:a.scope==='quarter'?(S.g.quarter||[]):S.g.big;
+        const g = list.find(x=>x.id===a.id);
+        if(g){ g.current = Math.max(0, Math.min(g.target, (g.current||0) + (a.delta||1))); done.push('↑ ' + g.name); }
+      }
+    } catch(e){ /* skip broken action */ }
+  }
+  if(done.length){ saveS(); renderGoals(); }
+  return done;
+}
 </script>
 </body>
 </html>

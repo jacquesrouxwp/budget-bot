@@ -2,7 +2,7 @@
 Budget Bot — FastAPI backend
 Handles: API state save/load, Telegram webhook, serves static Mini App
 """
-import os, json, hmac, hashlib, sqlite3, logging
+import os, json, hmac, hashlib, sqlite3, logging, re
 from contextlib import contextmanager
 from urllib.parse import parse_qsl
 from datetime import datetime
@@ -26,9 +26,10 @@ scheduler = None
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-BOT_TOKEN  = os.getenv("BOT_TOKEN", "")
-WEBHOOK_PATH = "/webhook/" + BOT_TOKEN  # secret path
-DB_PATH    = os.getenv("DB_PATH", "/data/budget.db" if os.path.isdir("/data") else "budget.db")
+BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
+WEBHOOK_PATH = "/webhook/" + BOT_TOKEN
+DB_PATH      = os.getenv("DB_PATH", "/data/budget.db" if os.path.isdir("/data") else "budget.db")
+XAI_API_KEY  = os.getenv("XAI_API_KEY", "")
 
 app = FastAPI(title="Budget Bot API", docs_url=None, redoc_url=None)
 app.add_middleware(
@@ -205,6 +206,96 @@ async def save_notification(request: Request):
             )
 
     return {"ok": True}
+
+
+# ── AI Assistant ─────────────────────────────────────────────────────────────
+
+HAB_NAMES = {
+    "h0":"Подъём","h1":"Молитва (утренняя)","h2":"Душ","h3":"Зал",
+    "h4":"Работа","h5":"Дом","h6":"Проект","h7":"Молитва (вечерняя)",
+    "h8":"Сон","h9":"Служение"
+}
+WD_NAMES = ["","Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+
+@app.post("/api/chat")
+async def chat_assistant(request: Request):
+    get_user_from_request(request)  # auth check
+    if not XAI_API_KEY:
+        return JSONResponse({"ok": False, "message": "XAI_API_KEY не настроен", "actions": []})
+
+    body    = await request.json()
+    message = body.get("message", "")
+    state   = body.get("state", {}) or {}
+    g       = state.get("g", {}) or {}
+
+    now      = datetime.now()
+    today_k  = now.strftime("%Y-%m-%d")
+    today_d  = (g.get("days") or {}).get(today_k, {})
+    habs_done = today_d.get("habs", {})
+    tasks    = today_d.get("tasks", [])
+    week_g   = g.get("week", [])
+
+    # Build names (override with custom)
+    names = {**HAB_NAMES, **(g.get("habitNames") or {})}
+
+    checklist_lines = [
+        ("✓" if habs_done.get(hid) else "○") + f" {names[hid]} [{hid}]"
+        for hid in HAB_NAMES
+    ]
+    tasks_lines = [
+        ("✓" if t.get("done") else "○") + f" [{i}] {t.get('name','')}"
+        for i, t in enumerate(tasks)
+    ]
+    goals_lines = [
+        f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [id:{g2['id']}]"
+        for g2 in week_g if g2.get("target", 0) > 0
+    ]
+
+    system = f"""Ты личный ассистент. Пользователь — христианин, работает над долгом и разрабатывает приложение для пасторов.
+Сейчас: {now.strftime('%H:%M')}, {WD_NAMES[now.isoweekday()]}, {now.strftime('%d.%m.%Y')}
+
+ЧЕКЛИСТ:
+{chr(10).join(checklist_lines)}
+
+ЗАДАЧИ СЕГОДНЯ:
+{chr(10).join(tasks_lines) if tasks_lines else 'нет'}
+
+НЕДЕЛЬНЫЕ ЦЕЛИ:
+{chr(10).join(goals_lines) if goals_lines else 'нет'}
+
+Отвечай кратко, по-русски, конкретно. Мотивируй без пафоса.
+Верни ТОЛЬКО JSON (без markdown):
+{{"message":"текст ответа","actions":[
+  {{"type":"toggleHab","id":"h3","value":true}},
+  {{"type":"toggleTask","index":0,"value":true}},
+  {{"type":"addTask","name":"название"}},
+  {{"type":"incGoal","scope":"week","id":101,"delta":1}}
+]}}
+actions может быть пустым []. Только реальные действия из запроса."""
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.x.ai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {XAI_API_KEY}","Content-Type":"application/json"},
+                json={
+                    "model": "grok-3-mini",
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": message}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 400
+                }
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"].strip()
+            content = re.sub(r'^```json\s*|\s*```$', '', content)
+            result  = json.loads(content)
+            return JSONResponse({"ok": True, **result})
+    except Exception as e:
+        log.error("Grok error: %s", e)
+        return JSONResponse({"ok": False, "message": "Ошибка связи с ассистентом 😕", "actions": []})
 
 
 # ── Telegram webhook ──────────────────────────────────────────────────────────

@@ -9,6 +9,8 @@ services:
         sync: false
       - key: WEBAPP_URL
         sync: false
+      - key: XAI_API_KEY
+        sync: false
       - key: DB_PATH
         value: budget.db
     disk:
