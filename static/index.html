@@ -2389,12 +2389,16 @@ ${noteLines.join('\n')||'нет'}
 
 async function executeAIActions(actions){
   const done = [];
+  let switchToDate = null; // if any action targets a different date — switch view to it
   for(const a of actions){
     try{
       if(a.type === 'toggleHab'){
         // supports optional a.date (ISO "YYYY-MM-DD") for specific day, else current view
         const k = a.date || vKey(); const d = ensD(k);
         d.habs[a.id] = a.value;
+        // Track if action targets a non-current date
+        if(a.date && a.date !== dk(0)) switchToDate = a.date;
+        else if(a.date === dk(1)) switchToDate = 'tomorrow';
         const hb = HAB.find(x=>x.id===a.id) || (S.g.customHabs||[]).find(x=>x.id===a.id);
         const nm = S.g.habitNames?.[a.id] || hb?.name || a.id;
         done.push((a.value?'✓ ':'✗ ') + nm + (a.date && a.date!==dk(0) ? ' ('+a.date+')' : ''));
@@ -2432,6 +2436,7 @@ async function executeAIActions(actions){
       } else if(a.type === 'addTask'){
         const k = a.date || vKey(); const d = ensD(k);
         d.tasks.push({name:a.name, done:false, id:Date.now(), linkId:null});
+        if(a.date && a.date !== dk(0)) switchToDate = a.date;
         done.push('+ задача: ' + a.name);
 
       } else if(a.type === 'deleteTask'){
@@ -2544,7 +2549,22 @@ async function executeAIActions(actions){
       }
     } catch(e){ console.error('action error', a, e); }
   }
-  if(done.length){ saveS(); renderGoals(); }
+  if(done.length){
+    saveS();
+    // If actions targeted a specific date — switch view to it so user sees the result
+    if(switchToDate){
+      if(switchToDate === dk(1)){
+        setDay('tomorrow', document.getElementById('dtab-tomorrow'));
+      } else {
+        // Custom date — use setDay with ISO string
+        setDay(switchToDate, null);
+        // Visually deselect all tabs
+        document.querySelectorAll('.dtab button').forEach(b=>b.classList.remove('on'));
+      }
+    } else {
+      renderGoals();
+    }
+  }
   return done;
 }
 </script>
