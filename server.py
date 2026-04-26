@@ -325,6 +325,14 @@ async def chat_assistant(request: Request):
     state   = body.get("state", {}) or {}
     g       = state.get("g", {}) or {}
 
+    # Finance state (root-level S object)
+    fin_card  = state.get("card", 0)
+    fin_debt  = state.get("debt", 0)
+    fin_cush  = state.get("cush", 0)
+    fin_defi  = state.get("defi", 0)
+    fin_exps  = state.get("ex", []) or []
+    fin_incs  = state.get("inc", []) or []
+
     now      = datetime.now()
     today_k  = now.strftime("%Y-%m-%d")
     today_d  = (g.get("days") or {}).get(today_k, {})
@@ -366,6 +374,21 @@ async def chat_assistant(request: Request):
     notes = (g.get("notes") or [])[-10:]
     notes_lines = [f"  [id:{n.get('id')}] [{n.get('category','?')}] {n.get('text','')}" for n in notes]
 
+    # Finance: last 8 transactions
+    ECAT = {"food":"Еда","transport":"Транспорт","gym":"Качалка","health":"Здоровье","other":"Прочее"}
+    ICAT = {"tips":"Чаевые","extra":"Подработка","bonus":"Бонус","other":"Прочее"}
+    recent_txs = sorted(
+        [{"t":"exp","id":x.get("id"),"date":x.get("date",""),"amount":x.get("amount",0),
+          "cat":ECAT.get(x.get("category","other"),"?"),"note":x.get("note","")} for x in fin_exps] +
+        [{"t":"inc","id":x.get("id"),"date":x.get("date",""),"amount":x.get("amount",0),
+          "cat":ICAT.get(x.get("category","other"),"?"),"note":x.get("note","")} for x in fin_incs],
+        key=lambda x: (x["date"], x["id"] or 0), reverse=True
+    )[:8]
+    tx_lines = [
+        f"  [id:{x['id']}] {x['date']} {'−' if x['t']=='exp' else '+'}{x['amount']}€ {x['cat']}{' · '+x['note'] if x['note'] else ''} [txType:{x['t']}]"
+        for x in recent_txs
+    ]
+
     # upcoming events from DB
     with get_db() as db:
         ev_rows = db.execute(
@@ -374,7 +397,7 @@ async def chat_assistant(request: Request):
         ).fetchall()
     events_lines = [f"  [id:{r['id']}] {r['event_date']} {r['event_time']} — {r['title']}" for r in ev_rows]
 
-    system = f"""Ты личный ассистент в приложении трекера привычек и целей.
+    system = f"""Ты личный ассистент в приложении трекера привычек, целей и финансов.
 Пользователь — христианин, пастор/служитель, разрабатывает приложение для пасторов.
 Сейчас: {now.strftime('%H:%M')}, {WD_NAMES[now.isoweekday()]}, {now.strftime('%d.%m.%Y')} (ISO: {today_k})
 
@@ -386,6 +409,11 @@ async def chat_assistant(request: Request):
 
 === ЦЕЛИ ===
 {chr(10).join(goals_lines) if goals_lines else 'нет'}
+
+=== ФИНАНСЫ ===
+Карта: {fin_card}€  |  Долг: {fin_debt}€  |  Подушка: {fin_cush}€  |  DeFi: {fin_defi}€
+Последние операции:
+{chr(10).join(tx_lines) if tx_lines else '  нет операций'}
 
 === ЗАМЕТКИ (последние 10) ===
 {chr(10).join(notes_lines) if notes_lines else 'нет'}
@@ -419,6 +447,18 @@ async def chat_assistant(request: Request):
 - Увеличить прогресс → incGoal (delta = количество)
 - Установить значение напрямую → setGoal (current или target)
 
+ФИНАНСЫ — расходы, доходы, балансы:
+- Записать расход → addExpense (потратил/купил/заплатил/расход/вышло)
+- Записать доход → addIncome (получил/чаевые/зарплата/доход/пришло)
+- Удалить операцию → deleteTx (по id и txType из списка выше)
+- Обновить баланс карты → setCard
+- Обновить долг → setDebt
+- Обновить подушку → setCush
+- Обновить DeFi → setDefi
+
+Категории расходов: food (еда/продукты/кофе/ресторан), transport (транспорт/проезд/такси), gym (качалка/зал/спорт), health (здоровье/аптека/врач), other (прочее)
+Категории доходов: tips (чаевые/tips), extra (подработка/халтура), bonus (бонус/премия), other (прочее)
+
 ДАТА: Если пользователь говорит "вчера"/"позавчера"/"в понедельник" — вычисли ISO дату и передай в поле "date".
 Сегодня: {today_k}. Неделя начинается с понедельника.
 
@@ -427,22 +467,27 @@ async def chat_assistant(request: Request):
 {{"message":"краткий ответ по-русски","actions":[...]}}
 
 Доступные типы actions:
-{{"type":"toggleHab","id":"h0","value":true}}  — отметить/снять пункт чеклиста (value: true=выполнено, false=снять)
+{{"type":"toggleHab","id":"h0","value":true}}  — отметить/снять пункт чеклиста
 {{"type":"toggleHab","id":"h0","value":true,"date":"2026-04-25"}}  — для конкретного дня
 {{"type":"addHabit","name":"Чтение","icon":"📚"}}  — добавить новый пункт в чеклист
 {{"type":"removeHabit","id":"h5"}}  — убрать пункт из чеклиста
 {{"type":"renameHabit","id":"h0","name":"Новое название"}}  — переименовать пункт
-{{"type":"addTask","name":"Позвонить врачу"}}  — разовая задача на сегодня
-{{"type":"addTask","name":"Задача","date":"2026-04-27"}}  — задача на конкретный день
-{{"type":"toggleTask","index":0,"value":true}}  — отметить задачу выполненной
+{{"type":"addTask","name":"Позвонить врачу"}}  — разовая задача
+{{"type":"toggleTask","index":0,"value":true}}  — отметить задачу
 {{"type":"deleteTask","index":0}}  — удалить задачу
 {{"type":"incGoal","scope":"week","id":101,"delta":1}}  — увеличить прогресс цели
 {{"type":"setGoal","scope":"week","id":101,"current":3}}  — установить значение цели
-{{"type":"setGoal","scope":"week","id":101,"target":7}}  — изменить целевое значение
-{{"type":"addNote","text":"текст","category":"idea"}}  — записать заметку (idea/prayer/plan/other)
+{{"type":"addNote","text":"текст","category":"idea"}}  — заметка (idea/prayer/plan/other)
 {{"type":"deleteNote","id":1234567890}}  — удалить заметку
 {{"type":"addEvent","title":"Встреча","date":"2026-05-10","time":"14:00","notif":true}}  — событие
 {{"type":"deleteEvent","id":5}}  — удалить событие
+{{"type":"addExpense","amount":25.5,"category":"food","note":"обед","date":"2026-04-26"}}  — записать расход
+{{"type":"addIncome","amount":40,"category":"tips","note":"столик 4","date":"2026-04-26"}}  — записать доход
+{{"type":"deleteTx","id":1234567890,"txType":"exp"}}  — удалить операцию (txType: exp или inc)
+{{"type":"setDebt","amount":14500}}  — обновить долг
+{{"type":"setCard","amount":200}}  — обновить баланс карты
+{{"type":"setCush","amount":150}}  — обновить подушку безопасности
+{{"type":"setDefi","amount":300}}  — обновить DeFi баланс
 
 actions может быть []. Только реальные действия из запроса пользователя."""
 

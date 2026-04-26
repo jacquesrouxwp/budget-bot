@@ -2246,6 +2246,51 @@ async function executeAIActions(actions){
         const devParam = !INIT_DATA ? '?dev=1' : '';
         await fetch(API_URL+'/api/event/'+a.id+devParam, {method:'DELETE', headers});
         done.push('🗑 событие удалено');
+
+      // ── FINANCE ──────────────────────────────────────────
+      } else if(a.type === 'addExpense'){
+        const amount = parseFloat(a.amount);
+        if(!amount || amount <= 0) break;
+        const date = a.date || ts();
+        const cat = a.category || 'other';
+        S.ex.push({id:Date.now(), date, amount, category:cat, note:a.note||''});
+        S.card = Math.max(0, Math.round((S.card - amount)*100)/100);
+        renderHome();
+        done.push('−' + amount + ' € ' + (ECAT[cat]?.l||cat) + (a.note?' · '+a.note:''));
+
+      } else if(a.type === 'addIncome'){
+        const amount = parseFloat(a.amount);
+        if(!amount || amount <= 0) break;
+        const date = a.date || ts();
+        const cat = a.category || 'other';
+        S.inc.push({id:Date.now(), date, amount, category:cat, note:a.note||''});
+        S.card = Math.round((S.card + amount)*100)/100;
+        renderHome();
+        done.push('+' + amount + ' € ' + (ICAT[cat]?.l||cat) + (a.note?' · '+a.note:''));
+
+      } else if(a.type === 'deleteTx'){
+        delTx(a.id, a.txType || 'exp');
+        done.push('🗑 транзакция удалена');
+
+      } else if(a.type === 'setDebt'){
+        S.debt = Math.max(0, parseFloat(a.amount)||0);
+        renderHome();
+        done.push('💳 долг → ' + S.debt + ' €');
+
+      } else if(a.type === 'setCard'){
+        S.card = Math.max(0, Math.round((parseFloat(a.amount)||0)*100)/100);
+        renderHome();
+        done.push('💰 карта → ' + S.card + ' €');
+
+      } else if(a.type === 'setCush'){
+        S.cush = Math.max(0, parseFloat(a.amount)||0);
+        renderHome();
+        done.push('🛡 подушка → ' + S.cush + ' €');
+
+      } else if(a.type === 'setDefi'){
+        S.defi = Math.max(0, parseFloat(a.amount)||0);
+        renderHome();
+        done.push('📈 DeFi → ' + S.defi + ' €');
       }
     } catch(e){ console.error('action error', a, e); }
   }
