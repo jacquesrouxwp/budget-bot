@@ -2120,6 +2120,26 @@ async function deleteEvent(id){
   } catch(e){}
 }
 
+async function toggleEventNotif(id, currentNotif){
+  try {
+    const devParam = !INIT_DATA ? '?dev=1' : '';
+    const headers = {'Content-Type':'application/json'};
+    if(INIT_DATA) headers['X-Init-Data'] = INIT_DATA;
+    const newNotif = currentNotif ? 0 : 1;
+    const r = await fetch(API_URL+'/api/event/'+id+'/notif'+devParam, {
+      method:'PATCH', headers,
+      body: JSON.stringify({notif: newNotif})
+    });
+    const data = await r.json();
+    if(data.ok){
+      const ev = _cachedEvents.find(e=>e.id===id);
+      if(ev) ev.notif = newNotif;
+      renderEvents();
+      TG?.HapticFeedback?.impactOccurred('light');
+    }
+  } catch(e){}
+}
+
 function renderEvents(){
   const el = document.getElementById('events-strip');
   if(!el) return;
@@ -2132,12 +2152,16 @@ function renderEvents(){
     const d = new Date(e.event_date+'T12:00:00');
     const dateStr = d.getDate()+' '+MS[d.getMonth()]+(e.event_time?' · '+e.event_time:'');
     const isToday = e.event_date===today;
+    const hasNotif = e.notif;
+    const notifIcon = hasNotif ? '🔔' : '🔕';
+    const notifTitle = hasNotif ? 'Уведомление включено' : 'Уведомление выключено';
     return `<div class="event-item">
       <div class="event-dot" style="background:${isToday?'var(--red)':'var(--accent)'};"></div>
       <div class="event-body">
         <div class="event-title">${e.title}</div>
         <div class="event-date">${isToday?'📅 Сегодня':dateStr}</div>
       </div>
+      <button class="event-notif" onclick="toggleEventNotif(${e.id},${hasNotif?1:0})" title="${notifTitle}" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;opacity:${hasNotif?'1':'0.4'};">${notifIcon}</button>
       <button class="event-del" onclick="deleteEvent(${e.id})">×</button>
     </div>`;
   }).join('');

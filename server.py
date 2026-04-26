@@ -293,6 +293,42 @@ async def save_event(request: Request):
     return JSONResponse({"ok": True, "id": event_id})
 
 
+@app.patch("/api/event/{event_id}/notif")
+async def toggle_event_notif(event_id: int, request: Request):
+    user = get_user_from_request(request)
+    user_id = user["id"]
+    body = await request.json()
+    notif = 1 if body.get("notif") else 0
+    with get_db() as db:
+        row = db.execute(
+            "SELECT title, event_date, event_time FROM user_events WHERE id=? AND user_id=?",
+            (event_id, user_id)
+        ).fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+        db.execute("UPDATE user_events SET notif=? WHERE id=? AND user_id=?", (notif, event_id, user_id))
+        db.commit()
+    job_id = f"event_{user_id}_{event_id}"
+    if HAS_APScheduler and scheduler:
+        try: scheduler.remove_job(job_id)
+        except: pass
+        if notif and BOT_TOKEN and row["event_date"]:
+            try:
+                from apscheduler.triggers.date import DateTrigger
+                from datetime import datetime as dt
+                t = row["event_time"] or "09:00"
+                h, m = map(int, t.split(":"))
+                y, mo, d = map(int, row["event_date"].split("-"))
+                run_dt = dt(y, mo, d, h, m)
+                if run_dt > dt.now():
+                    scheduler.add_job(_send_tg_message, DateTrigger(run_date=run_dt),
+                        args=[user_id, f"📅 {row['title']}\n\nСобытие сегодня!"],
+                        id=job_id, replace_existing=True)
+            except Exception as e:
+                log.warning("Event notif reschedule error: %s", e)
+    return JSONResponse({"ok": True, "notif": notif})
+
+
 @app.delete("/api/event/{event_id}")
 async def delete_event(event_id: int, request: Request):
     user = get_user_from_request(request)
