@@ -2167,31 +2167,87 @@ async function executeAIActions(actions){
   for(const a of actions){
     try{
       if(a.type === 'toggleHab'){
-        const k = vKey(); const d = ensD(k);
+        // supports optional a.date (ISO "YYYY-MM-DD") for specific day, else current view
+        const k = a.date || vKey(); const d = ensD(k);
         d.habs[a.id] = a.value;
         const hb = HAB.find(x=>x.id===a.id) || (S.g.customHabs||[]).find(x=>x.id===a.id);
         const nm = S.g.habitNames?.[a.id] || hb?.name || a.id;
-        done.push((a.value?'✓ ':'✗ ') + nm);
+        done.push((a.value?'✓ ':'✗ ') + nm + (a.date && a.date!==dk(0) ? ' ('+a.date+')' : ''));
+
+      } else if(a.type === 'addHabit'){
+        if(!S.g.customHabs) S.g.customHabs=[];
+        const id = 'c'+(Date.now()%1e8);
+        S.g.customHabs.push({id, icon: a.icon||'⭐', name: a.name, after: a.after||''});
+        done.push('➕ ' + a.name);
+
+      } else if(a.type === 'removeHabit'){
+        // remove custom hab, or hide built-in
+        const isCustom = (S.g.customHabs||[]).some(x=>x.id===a.id);
+        if(isCustom){
+          S.g.customHabs = (S.g.customHabs||[]).filter(c=>c.id!==a.id);
+          Object.values(S.g.days).forEach(d=>{if(d.habs)delete d.habs[a.id];});
+          if(S.g.habitLinks) delete S.g.habitLinks[a.id];
+        } else {
+          if(!S.g.hiddenHabs) S.g.hiddenHabs=[];
+          if(!S.g.hiddenHabs.includes(a.id)) S.g.hiddenHabs.push(a.id);
+        }
+        const hb = HAB.find(x=>x.id===a.id) || (S.g.customHabs||[]).find(x=>x.id===a.id);
+        done.push('🗑 ' + (S.g.habitNames?.[a.id] || hb?.name || a.id));
+
+      } else if(a.type === 'renameHabit'){
+        if(!S.g.habitNames) S.g.habitNames={};
+        S.g.habitNames[a.id] = a.name;
+        done.push('✏️ → ' + a.name);
+
       } else if(a.type === 'toggleTask'){
-        const k = vKey(); const d = ensD(k);
+        const k = a.date || vKey(); const d = ensD(k);
         if(d.tasks[a.index]) d.tasks[a.index].done = a.value;
         done.push((a.value?'✓ ':'○ ') + (d.tasks[a.index]?.name||'задача'));
+
       } else if(a.type === 'addTask'){
-        const k = vKey(); const d = ensD(k);
+        const k = a.date || vKey(); const d = ensD(k);
         d.tasks.push({name:a.name, done:false, id:Date.now(), linkId:null});
-        done.push('+ ' + a.name);
+        done.push('+ задача: ' + a.name);
+
+      } else if(a.type === 'deleteTask'){
+        const k = a.date || vKey(); const d = ensD(k);
+        const removed = d.tasks.splice(a.index, 1);
+        done.push('🗑 задача: ' + (removed[0]?.name||a.index));
+
       } else if(a.type === 'incGoal'){
         const list = a.scope==='week'?S.g.week:a.scope==='month'?S.g.month:a.scope==='quarter'?(S.g.quarter||[]):S.g.big;
         const g = list.find(x=>x.id===a.id);
         if(g){ g.current = Math.max(0, Math.min(g.target, (g.current||0) + (a.delta||1))); done.push('↑ ' + g.name); }
+
+      } else if(a.type === 'setGoal'){
+        // set goal current value directly, or change target
+        const list = a.scope==='week'?S.g.week:a.scope==='month'?S.g.month:a.scope==='quarter'?(S.g.quarter||[]):S.g.big;
+        const g = list.find(x=>x.id===a.id);
+        if(g){
+          if(a.current != null) g.current = Math.max(0, a.current);
+          if(a.target != null) g.target = Math.max(1, a.target);
+          done.push('🎯 ' + g.name + ': ' + g.current + '/' + g.target);
+        }
+
       } else if(a.type === 'addNote'){
         addNote(a.text, a.category||'other');
-        done.push((NOTE_ICONS[a.category]||'📌') + ' ' + a.text.slice(0,30));
+        done.push((NOTE_ICONS[a.category]||'📌') + ' ' + a.text.slice(0,40));
+
+      } else if(a.type === 'deleteNote'){
+        S.g.notes = (S.g.notes||[]).filter(n=>n.id!==a.id);
+        renderNotes();
+        done.push('🗑 заметка удалена');
+
       } else if(a.type === 'addEvent'){
         await saveEvent(a.title, a.date, a.time||'', a.notif!==false);
         done.push('📅 ' + a.title + ' ' + a.date);
+
+      } else if(a.type === 'deleteEvent'){
+        const devParam = !INIT_DATA ? '?dev=1' : '';
+        await fetch(API_URL+'/api/event/'+a.id+devParam, {method:'DELETE', headers});
+        done.push('🗑 событие удалено');
       }
-    } catch(e){ /* skip broken action */ }
+    } catch(e){ console.error('action error', a, e); }
   }
   if(done.length){ saveS(); renderGoals(); }
   return done;

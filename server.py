@@ -335,20 +335,36 @@ async def chat_assistant(request: Request):
     # Build names (override with custom)
     names = {**HAB_NAMES, **(g.get("habitNames") or {})}
 
+    # All checklist items: built-in + custom
+    custom_habs = g.get("customHabs") or []
+    hidden_habs = g.get("hiddenHabs") or []
+    all_hab_ids = [hid for hid in HAB_NAMES if hid not in hidden_habs]
     checklist_lines = [
-        ("✓" if habs_done.get(hid) else "○") + f" {names[hid]} [{hid}]"
-        for hid in HAB_NAMES
+        ("✓" if habs_done.get(hid) else "○") + f" {names[hid]} [id:{hid}]"
+        for hid in all_hab_ids
     ]
+    for ch in custom_habs:
+        cid = ch.get("id","")
+        checklist_lines.append(
+            ("✓" if habs_done.get(cid) else "○") + f" {ch.get('name','')} [id:{cid}] (пользовательский)"
+        )
+
     tasks_lines = [
-        ("✓" if t.get("done") else "○") + f" [{i}] {t.get('name','')}"
+        ("✓" if t.get("done") else "○") + f" [index:{i}] {t.get('name','')}"
         for i, t in enumerate(tasks)
     ]
     goals_lines = [
-        f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [id:{g2['id']}]"
+        f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [scope:week id:{g2['id']}]"
         for g2 in week_g if g2.get("target", 0) > 0
     ]
-    notes = (g.get("notes") or [])[-10:]  # last 10 notes
-    notes_lines = [f"  [{n.get('id')}] [{n.get('category','?')}] {n.get('text','')}" for n in notes]
+    month_g = g.get("month") or []
+    goals_lines += [
+        f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [scope:month id:{g2['id']}]"
+        for g2 in month_g if g2.get("target", 0) > 0
+    ]
+
+    notes = (g.get("notes") or [])[-10:]
+    notes_lines = [f"  [id:{n.get('id')}] [{n.get('category','?')}] {n.get('text','')}" for n in notes]
 
     # upcoming events from DB
     with get_db() as db:
@@ -356,38 +372,79 @@ async def chat_assistant(request: Request):
             "SELECT id, title, event_date, event_time FROM user_events WHERE user_id=? AND event_date >= ? ORDER BY event_date LIMIT 5",
             (user["id"], now.strftime("%Y-%m-%d"))
         ).fetchall()
-    events_lines = [f"  [{r['id']}] {r['event_date']} {r['event_time']} — {r['title']}" for r in ev_rows]
+    events_lines = [f"  [id:{r['id']}] {r['event_date']} {r['event_time']} — {r['title']}" for r in ev_rows]
 
-    system = f"""Ты личный ассистент. Пользователь — христианин, работает над долгом и разрабатывает приложение для пасторов.
-Сейчас: {now.strftime('%H:%M')}, {WD_NAMES[now.isoweekday()]}, {now.strftime('%d.%m.%Y')}
+    system = f"""Ты личный ассистент в приложении трекера привычек и целей.
+Пользователь — христианин, пастор/служитель, разрабатывает приложение для пасторов.
+Сейчас: {now.strftime('%H:%M')}, {WD_NAMES[now.isoweekday()]}, {now.strftime('%d.%m.%Y')} (ISO: {today_k})
 
-ЧЕКЛИСТ:
+=== ЧЕК-ЛИСТ СЕГОДНЯ ===
 {chr(10).join(checklist_lines)}
 
-ЗАДАЧИ СЕГОДНЯ:
+=== ЗАДАЧИ СЕГОДНЯ ===
 {chr(10).join(tasks_lines) if tasks_lines else 'нет'}
 
-НЕДЕЛЬНЫЕ ЦЕЛИ:
+=== ЦЕЛИ ===
 {chr(10).join(goals_lines) if goals_lines else 'нет'}
 
-ЗАМЕТКИ (последние):
+=== ЗАМЕТКИ (последние 10) ===
 {chr(10).join(notes_lines) if notes_lines else 'нет'}
 
-ПРЕДСТОЯЩИЕ СОБЫТИЯ:
+=== ПРЕДСТОЯЩИЕ СОБЫТИЯ ===
 {chr(10).join(events_lines) if events_lines else 'нет'}
 
-Отвечай кратко, по-русски, конкретно. Мотивируй без пафоса.
-Верни ТОЛЬКО JSON (без markdown):
-{{"message":"текст ответа","actions":[
-  {{"type":"toggleHab","id":"h3","value":true}},
-  {{"type":"toggleTask","index":0,"value":true}},
-  {{"type":"addTask","name":"название"}},
-  {{"type":"incGoal","scope":"week","id":101,"delta":1}},
-  {{"type":"addNote","text":"текст идеи","category":"idea"}},
-  {{"type":"addEvent","title":"Встреча","date":"2025-05-10","time":"14:00","notif":true}}
-]}}
-Категории заметок: idea (идея), prayer (молитва), plan (план), other.
-actions может быть пустым []. Только реальные действия из запроса."""
+=== ПРАВИЛА ВЫБОРА ДЕЙСТВИЯ ===
+ВАЖНО: различай чёткими признаками:
+
+ЧЕК-ЛИСТ (привычки/пункты дня) — это ФИКСИРОВАННЫЕ ежедневные пункты: Подъём, Молитва, Душ, Зал, Работа и т.д.
+- Отметить/снять пункт → toggleHab (id из списка выше)
+- ДОБАВИТЬ НОВЫЙ ПУНКТ В ЧЕК-ЛИСТ → addHabit (когда говорит "добавь в чеклист", "новый пункт", "добавь привычку")
+- Убрать/удалить пункт из чеклиста → removeHabit
+- Переименовать пункт → renameHabit
+
+ЗАДАЧИ — разовые дела на конкретный день (не ежедневные):
+- Добавить задачу → addTask (когда говорит "задача", "дело", "сделать сегодня/завтра")
+- Отметить задачу выполненной → toggleTask (по index)
+- Удалить задачу → deleteTask (по index)
+
+ЗАМЕТКИ — мысли, идеи, молитвы, планы для записи:
+- Записать заметку → addNote (ТОЛЬКО когда говорит "запиши", "заметь", "идея", "молитва", "план", "мысль")
+- Удалить заметку → deleteNote (по id из списка)
+
+СОБЫТИЯ — конкретные встречи/мероприятия с датой и временем:
+- Добавить событие → addEvent (когда говорит "событие", "встреча", "запланируй", "поставь на [дату]")
+- Удалить событие → deleteEvent (по id из списка)
+
+ЦЕЛИ — долгосрочные количественные цели:
+- Увеличить прогресс → incGoal (delta = количество)
+- Установить значение напрямую → setGoal (current или target)
+
+ДАТА: Если пользователь говорит "вчера"/"позавчера"/"в понедельник" — вычисли ISO дату и передай в поле "date".
+Сегодня: {today_k}. Неделя начинается с понедельника.
+
+=== ФОРМАТ ОТВЕТА ===
+Верни ТОЛЬКО валидный JSON без markdown:
+{{"message":"краткий ответ по-русски","actions":[...]}}
+
+Доступные типы actions:
+{{"type":"toggleHab","id":"h0","value":true}}  — отметить/снять пункт чеклиста (value: true=выполнено, false=снять)
+{{"type":"toggleHab","id":"h0","value":true,"date":"2026-04-25"}}  — для конкретного дня
+{{"type":"addHabit","name":"Чтение","icon":"📚"}}  — добавить новый пункт в чеклист
+{{"type":"removeHabit","id":"h5"}}  — убрать пункт из чеклиста
+{{"type":"renameHabit","id":"h0","name":"Новое название"}}  — переименовать пункт
+{{"type":"addTask","name":"Позвонить врачу"}}  — разовая задача на сегодня
+{{"type":"addTask","name":"Задача","date":"2026-04-27"}}  — задача на конкретный день
+{{"type":"toggleTask","index":0,"value":true}}  — отметить задачу выполненной
+{{"type":"deleteTask","index":0}}  — удалить задачу
+{{"type":"incGoal","scope":"week","id":101,"delta":1}}  — увеличить прогресс цели
+{{"type":"setGoal","scope":"week","id":101,"current":3}}  — установить значение цели
+{{"type":"setGoal","scope":"week","id":101,"target":7}}  — изменить целевое значение
+{{"type":"addNote","text":"текст","category":"idea"}}  — записать заметку (idea/prayer/plan/other)
+{{"type":"deleteNote","id":1234567890}}  — удалить заметку
+{{"type":"addEvent","title":"Встреча","date":"2026-05-10","time":"14:00","notif":true}}  — событие
+{{"type":"deleteEvent","id":5}}  — удалить событие
+
+actions может быть []. Только реальные действия из запроса пользователя."""
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
