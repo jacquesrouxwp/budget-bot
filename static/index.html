@@ -2413,13 +2413,38 @@ async function executeAIActions(actions){
         if(g){ g.current = Math.max(0, Math.min(g.target, (g.current||0) + (a.delta||1))); done.push('↑ ' + g.name); }
 
       } else if(a.type === 'setGoal'){
-        // set goal current value directly, or change target
         const list = a.scope==='week'?S.g.week:a.scope==='month'?S.g.month:a.scope==='quarter'?(S.g.quarter||[]):S.g.big;
         const g = list.find(x=>x.id===a.id);
         if(g){
           if(a.current != null) g.current = Math.max(0, a.current);
           if(a.target != null) g.target = Math.max(1, a.target);
           done.push('🎯 ' + g.name + ': ' + g.current + '/' + g.target);
+        }
+
+      } else if(a.type === 'addGoal'){
+        const scope = a.scope || 'week';
+        if(!S.g.quarter) S.g.quarter=[];
+        const list = scope==='week'?S.g.week:scope==='month'?S.g.month:scope==='quarter'?S.g.quarter:S.g.big;
+        const col = COLORS[list.length % COLORS.length];
+        const newGoal = {id:Date.now(), name:a.name, target:a.target||1, current:0, unit:a.unit||'раз', color:col, parentId:null};
+        list.push(newGoal);
+        done.push('🎯 + ' + a.name + ' (' + scope + ')');
+
+      } else if(a.type === 'deleteGoal'){
+        const scope = a.scope || 'week';
+        if(!S.g.quarter) S.g.quarter=[];
+        const lists = {week:S.g.week, month:S.g.month, quarter:S.g.quarter, big:S.g.big};
+        const list = lists[scope];
+        if(list){
+          const g = list.find(x=>x.id===a.id);
+          if(g){
+            lists[scope] = list.filter(x=>x.id!==a.id);
+            if(scope==='week') S.g.week=lists.week;
+            else if(scope==='month') S.g.month=lists.month;
+            else if(scope==='quarter') S.g.quarter=lists.quarter;
+            else S.g.big=lists.big;
+            done.push('🗑 цель: ' + g.name);
+          }
         }
 
       } else if(a.type === 'addNote'){

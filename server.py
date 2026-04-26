@@ -361,15 +361,38 @@ async def chat_assistant(request: Request):
         ("✓" if t.get("done") else "○") + f" [index:{i}] {t.get('name','')}"
         for i, t in enumerate(tasks)
     ]
-    goals_lines = [
-        f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [scope:week id:{g2['id']}]"
-        for g2 in week_g if g2.get("target", 0) > 0
-    ]
-    month_g = g.get("month") or []
-    goals_lines += [
-        f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [scope:month id:{g2['id']}]"
-        for g2 in month_g if g2.get("target", 0) > 0
-    ]
+    month_g   = g.get("month") or []
+    quarter_g = g.get("quarter") or []
+    big_g     = g.get("big") or []
+    habit_links = g.get("habitLinks") or {}  # {habId: goalId}
+
+    def fmt_goal(g2, scope):
+        pct = round((g2.get("current",0)) / g2["target"] * 100) if g2.get("target",0) > 0 else 0
+        parent_id = g2.get("parentId")
+        parent_info = f" → parent_id:{parent_id}" if parent_id else ""
+        return f"  [{scope} id:{g2['id']}] {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} ({pct}%){parent_info}"
+
+    goals_lines  = [fmt_goal(g2,"week")    for g2 in week_g    if g2.get("target",0)>0]
+    goals_lines += [fmt_goal(g2,"month")   for g2 in month_g   if g2.get("target",0)>0]
+    goals_lines += [fmt_goal(g2,"quarter") for g2 in quarter_g if g2.get("target",0)>0]
+    goals_lines += [fmt_goal(g2,"big")     for g2 in big_g     if g2.get("target",0)>0]
+
+    # Build habit→goal chain strings for context
+    all_goals = {g2["id"]: g2 for g2 in week_g + month_g + quarter_g + big_g}
+    def goal_chain(gid):
+        parts = []
+        cur = all_goals.get(gid)
+        while cur:
+            parts.append(cur["name"])
+            cur = all_goals.get(cur.get("parentId"))
+        return " → ".join(parts) if parts else ""
+
+    chain_lines = []
+    for hab_id, goal_id in habit_links.items():
+        hab_name = names.get(hab_id, hab_id)
+        chain = goal_chain(goal_id)
+        if chain:
+            chain_lines.append(f"  {hab_name} [{hab_id}] → {chain}")
 
     notes = (g.get("notes") or [])[-10:]
     notes_lines = [f"  [id:{n.get('id')}] [{n.get('category','?')}] {n.get('text','')}" for n in notes]
@@ -401,14 +424,22 @@ async def chat_assistant(request: Request):
 Пользователь — христианин, пастор/служитель, разрабатывает приложение для пасторов.
 Сейчас: {now.strftime('%H:%M')}, {WD_NAMES[now.isoweekday()]}, {now.strftime('%d.%m.%Y')} (ISO: {today_k})
 
+=== СИСТЕМА ЦЕЛЕЙ — ЕДИНЫЙ ПУТЬ ===
+Все уровни — это ОДНА цепочка: ежедневные привычки питают недельные цели, недельные → месячные, месячные → квартальные, квартальные → глобальные.
+Каждый раз когда пользователь выполняет привычку из чеклиста — автоматически растёт соответствующая недельная цель.
+Пример цепи: [привычка] Зал → [неделя] Зал 3/3 → [месяц] Здоровье → [квартал] Форма → [глобальная] Здоровый образ жизни
+
+ЦЕПОЧКИ ПРИВЫЧКИ → ЦЕЛИ (текущие):
+{chr(10).join(chain_lines) if chain_lines else '  связей пока нет'}
+
+ВСЕ ЦЕЛИ (все уровни):
+{chr(10).join(goals_lines) if goals_lines else '  целей нет'}
+
 === ЧЕК-ЛИСТ СЕГОДНЯ ===
 {chr(10).join(checklist_lines)}
 
 === ЗАДАЧИ СЕГОДНЯ ===
 {chr(10).join(tasks_lines) if tasks_lines else 'нет'}
-
-=== ЦЕЛИ ===
-{chr(10).join(goals_lines) if goals_lines else 'нет'}
 
 === ФИНАНСЫ ===
 Карта: {fin_card}€  |  Долг: {fin_debt}€  |  Подушка: {fin_cush}€  |  DeFi: {fin_defi}€
@@ -422,45 +453,35 @@ async def chat_assistant(request: Request):
 {chr(10).join(events_lines) if events_lines else 'нет'}
 
 === ПРАВИЛА ВЫБОРА ДЕЙСТВИЯ ===
-ВАЖНО: различай чёткими признаками:
 
-ЧЕК-ЛИСТ (привычки/пункты дня) — это ФИКСИРОВАННЫЕ ежедневные пункты: Подъём, Молитва, Душ, Зал, Работа и т.д.
-- Отметить/снять пункт → toggleHab (id из списка выше)
-- ДОБАВИТЬ НОВЫЙ ПУНКТ В ЧЕК-ЛИСТ → addHabit (когда говорит "добавь в чеклист", "новый пункт", "добавь привычку")
-- Убрать/удалить пункт из чеклиста → removeHabit
-- Переименовать пункт → renameHabit
+ЧЕК-ЛИСТ — ежедневные привычки (нижний уровень цепочки):
+- Отметить выполненным → toggleHab (id из чеклиста выше)
+- Добавить новую привычку в чеклист → addHabit
+- Убрать привычку → removeHabit | Переименовать → renameHabit
 
-ЗАДАЧИ — разовые дела на конкретный день (не ежедневные):
-- Добавить задачу → addTask (когда говорит "задача", "дело", "сделать сегодня/завтра")
-- Отметить задачу выполненной → toggleTask (по index)
-- Удалить задачу → deleteTask (по index)
+ЗАДАЧИ — разовые дела на конкретный день (не привычки):
+- Добавить → addTask | Выполнить → toggleTask (index) | Удалить → deleteTask (index)
 
-ЗАМЕТКИ — мысли, идеи, молитвы, планы для записи:
-- Записать заметку → addNote (ТОЛЬКО когда говорит "запиши", "заметь", "идея", "молитва", "план", "мысль")
-- Удалить заметку → deleteNote (по id из списка)
+ЦЕЛИ — иерархия week → month → quarter → big:
+- СОЗДАТЬ новую цель → addGoal (scope: week/month/quarter/big, name, target, unit)
+- Увеличить прогресс → incGoal (id + scope из списка выше)
+- Изменить значение → setGoal (id + scope, НЕ для новых целей!)
+- Удалить → deleteGoal (id + scope)
+- При создании цели спроси/угадай к какому уровню она относится по контексту
 
-СОБЫТИЯ — конкретные встречи/мероприятия с датой и временем:
-- Добавить событие → addEvent (когда говорит "событие", "встреча", "запланируй", "поставь на [дату]")
-- Удалить событие → deleteEvent (по id из списка)
+ЗАМЕТКИ — мысли/идеи/молитвы/планы:
+- Сохранить → addNote (category: idea/prayer/plan/other) | Удалить → deleteNote (id)
 
-ЦЕЛИ — долгосрочные количественные цели:
-- Увеличить прогресс → incGoal (delta = количество)
-- Установить значение напрямую → setGoal (current или target)
+СОБЫТИЯ — встречи с датой и временем:
+- Добавить → addEvent | Удалить → deleteEvent (id)
 
-ФИНАНСЫ — расходы, доходы, балансы:
-- Записать расход → addExpense (потратил/купил/заплатил/расход/вышло)
-- Записать доход → addIncome (получил/чаевые/зарплата/доход/пришло)
-- Удалить операцию → deleteTx (по id и txType из списка выше)
-- Обновить баланс карты → setCard
-- Обновить долг → setDebt
-- Обновить подушку → setCush
-- Обновить DeFi → setDefi
+ФИНАНСЫ:
+- Расход → addExpense | Доход → addIncome | Удалить операцию → deleteTx (id, txType: exp/inc)
+- Обновить балансы → setCard / setDebt / setCush / setDefi
+- Категории расходов: food/transport/gym/health/other
+- Категории доходов: tips/extra/bonus/other
 
-Категории расходов: food (еда/продукты/кофе/ресторан), transport (транспорт/проезд/такси), gym (качалка/зал/спорт), health (здоровье/аптека/врач), other (прочее)
-Категории доходов: tips (чаевые/tips), extra (подработка/халтура), bonus (бонус/премия), other (прочее)
-
-ДАТА: Если пользователь говорит "вчера"/"позавчера"/"в понедельник" — вычисли ISO дату и передай в поле "date".
-Сегодня: {today_k}. Неделя начинается с понедельника.
+ДАТА: "вчера/позавчера/в понедельник" → вычисли ISO дату. Сегодня: {today_k}. Неделя с понедельника.
 
 === ФОРМАТ ОТВЕТА ===
 Верни ТОЛЬКО валидный JSON без markdown:
@@ -475,8 +496,10 @@ async def chat_assistant(request: Request):
 {{"type":"addTask","name":"Позвонить врачу"}}  — разовая задача
 {{"type":"toggleTask","index":0,"value":true}}  — отметить задачу
 {{"type":"deleteTask","index":0}}  — удалить задачу
+{{"type":"addGoal","scope":"week","name":"Бег","target":5,"unit":"км"}}  — создать новую цель (scope: week/month/quarter/big)
 {{"type":"incGoal","scope":"week","id":101,"delta":1}}  — увеличить прогресс цели
 {{"type":"setGoal","scope":"week","id":101,"current":3}}  — установить значение цели
+{{"type":"deleteGoal","scope":"week","id":101}}  — удалить цель
 {{"type":"addNote","text":"текст","category":"idea"}}  — заметка (idea/prayer/plan/other)
 {{"type":"deleteNote","id":1234567890}}  — удалить заметку
 {{"type":"addEvent","title":"Встреча","date":"2026-05-10","time":"14:00","notif":true}}  — событие
