@@ -288,6 +288,9 @@ select.inp option{background:var(--bg);}
 .event-title{font-size:13px;font-weight:600;color:var(--ink);}
 .event-date{font-size:11px;color:var(--hint);margin-top:1px;}
 .event-del{background:none;border:none;color:var(--hint);cursor:pointer;font-size:16px;padding:0 2px;}
+/* Day Summary Button */
+.day-summary-btn{width:100%;display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--accent) 0%,#7F77DD 100%);color:#fff;border:none;border-radius:var(--r);padding:16px 18px;cursor:pointer;margin-bottom:16px;text-align:left;font-family:inherit;transition:opacity .15s,transform .1s;}
+.day-summary-btn:active{opacity:.85;transform:scale(.98);}
 /* Notes */
 .notes-section{margin-bottom:16px;}
 .notes-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
@@ -784,6 +787,16 @@ select.inp option{background:var(--bg);}
   </div>
 
   <div id="scope-list"></div>
+
+  <!-- DAY SUMMARY BUTTON -->
+  <button class="day-summary-btn" id="day-summary-btn" onclick="openDaySummary()">
+    <span style="font-size:20px;">📊</span>
+    <div>
+      <div style="font-size:15px;font-weight:700;">Итог дня</div>
+      <div style="font-size:12px;opacity:.7;margin-top:1px;">Полный отчёт от Grok</div>
+    </div>
+    <span style="margin-left:auto;font-size:18px;opacity:.5;">›</span>
+  </button>
 
   <button class="mbtn" onclick="toggleAP()" id="ap-btn" style="background:var(--bg2);color:var(--text);border:none;width:100%;padding:12px;font-size:14px;font-weight:600;border-radius:var(--rsm);margin-bottom:8px;">+ Добавить цель</button>
   <div class="ap gone" id="ap-form">
@@ -2160,6 +2173,121 @@ async function sendAI(){
     typing.remove();
     aiAddMsg('Ошибка связи 😕', 'bot');
   }
+}
+
+async function openDaySummary(){
+  openAI();
+  await new Promise(r=>setTimeout(r,150));
+  const btn = document.getElementById('day-summary-btn');
+  if(btn){ btn.disabled=true; btn.style.opacity='.6'; }
+
+  const today = dk(0);
+  const g = S.g || {};
+
+  // ── Checklist today ──
+  const allHabs = [...HAB, ...(g.customHabs||[])].filter(h=>!(g.hiddenHabs||[]).includes(h.id));
+  const todayD = (g.days||{})[today] || {};
+  const habsDone = allHabs.filter(h=>(todayD.habs||{})[h.id]).map(h=>h.name);
+  const habsMiss = allHabs.filter(h=>!(todayD.habs||{})[h.id]).map(h=>h.name);
+
+  // ── Tasks today ──
+  const tasks = todayD.tasks || [];
+  const tasksDone = tasks.filter(t=>t.done).map(t=>t.name);
+  const tasksTodo = tasks.filter(t=>!t.done).map(t=>t.name);
+
+  // ── Habit stats this week (Mon–today) ──
+  const weekStart = g.ws || today;
+  const weekDays = [];
+  for(let i=0;i<7;i++){
+    const d2=new Date(weekStart+'T12:00:00'); d2.setDate(d2.getDate()+i);
+    const k=d2.toISOString().slice(0,10);
+    if(k<=today) weekDays.push(k);
+  }
+  const habWeekLines = allHabs.map(h=>{
+    const cnt=weekDays.filter(k=>(g.days||{})[k]?.habs?.[h.id]).length;
+    return `  ${h.name}: ${cnt}/${weekDays.length} дн.`;
+  });
+
+  // ── All goals ──
+  const fmtGoals = (list, scope) => (list||[]).filter(x=>x.target>0).map(x=>{
+    const pct=Math.round((x.current||0)/x.target*100);
+    return `  [${scope}] ${x.name}: ${x.current||0}/${x.target} ${x.unit||''} — ${pct}%`;
+  });
+  const allGoalLines = [
+    ...fmtGoals(g.week,'неделя'),
+    ...fmtGoals(g.month,'месяц'),
+    ...fmtGoals(g.quarter,'квартал'),
+    ...fmtGoals(g.big,'глобальные'),
+  ];
+
+  // ── Finance: full billing cycle ──
+  const cycleStart=(()=>{const n=new Date(),dd=n.getDate(),m=n.getMonth(),y=n.getFullYear();return dd<20?new Date(y,m-1,20):new Date(y,m,20);})();
+  const cycleKey=cycleStart.toISOString().slice(0,10);
+  const cycleExps=(S.ex||[]).filter(x=>x.date>=cycleKey);
+  const cycleIncs=(S.inc||[]).filter(x=>x.date>=cycleKey);
+  const ECAT_L={food:'Еда',transport:'Транспорт',gym:'Качалка',health:'Здоровье',other:'Прочее'};
+  const ICAT_L={tips:'Чаевые',extra:'Подработка',bonus:'Бонус',other:'Прочее'};
+  const byCategory=(arr,map)=>{
+    const acc={};
+    arr.forEach(x=>{const k=map[x.category]||'Прочее';acc[k]=(acc[k]||0)+x.amount;});
+    return Object.entries(acc).map(([k,v])=>`${k} ${v.toFixed(1)}€`).join(', ')||'нет';
+  };
+  const todayExps=cycleExps.filter(x=>x.date===today);
+  const todayIncs=cycleIncs.filter(x=>x.date===today);
+  const cycleTotalSpent=cycleExps.reduce((a,x)=>a+x.amount,0);
+  const cycleTotalInc=cycleIncs.reduce((a,x)=>a+x.amount,0);
+
+  // ── Recent notes ──
+  const noteLines=(g.notes||[]).slice(-5).map(n=>`  [${n.category}] ${n.text}`);
+
+  const summaryPrompt =
+`ИТОГ ДНЯ — полный срез приложения на ${today}
+
+=== ЧЕК-ЛИСТ СЕГОДНЯ ===
+Выполнено ${habsDone.length}/${allHabs.length}: ${habsDone.join(', ')||'ничего'}
+Пропущено: ${habsMiss.join(', ')||'всё выполнено'}
+
+=== ПРИВЫЧКИ ЗА НЕДЕЛЮ (${weekStart} — ${today}) ===
+${habWeekLines.join('\n')||'нет данных'}
+
+=== ЗАДАЧИ СЕГОДНЯ ===
+Сделано: ${tasksDone.join(', ')||'нет'}
+Не сделано: ${tasksTodo.join(', ')||'нет'}
+
+=== ВСЕ ЦЕЛИ ===
+${allGoalLines.join('\n')||'целей нет'}
+
+=== ФИНАНСЫ — цикл с ${cycleKey} ===
+Расходы за цикл: ${cycleTotalSpent.toFixed(2)}€ | по категориям: ${byCategory(cycleExps,ECAT_L)}
+Доходы за цикл: ${cycleTotalInc.toFixed(2)}€ | по категориям: ${byCategory(cycleIncs,ICAT_L)}
+Сегодня потрачено: ${todayExps.reduce((a,x)=>a+x.amount,0).toFixed(2)}€ — ${todayExps.map(x=>x.note||ECAT_L[x.category]).join(', ')||'нет'}
+Сегодня получено: ${todayIncs.reduce((a,x)=>a+x.amount,0).toFixed(2)}€ — ${todayIncs.map(x=>x.note||ICAT_L[x.category]).join(', ')||'нет'}
+Карта: ${S.card}€ | Долг: ${S.debt}€ | Подушка: ${S.cush}€ | DeFi: ${S.defi||0}€
+
+=== ЗАМЕТКИ (последние) ===
+${noteLines.join('\n')||'нет'}
+
+Дай ПОЛНЫЙ структурированный итог по каждому разделу. Оцени привычки за неделю, прогресс по всем целям, финансовую дисциплину цикла. Что сделано хорошо, что провалено. Дай 2-3 конкретных совета на завтра. По-русски, честно, без воды.`;
+
+  // Show compact label in chat, send full data silently
+  aiAddMsg('📊 Итог дня', 'user');
+  const typing = aiAddMsg('...', 'bot typing');
+  try {
+    const headers = {'Content-Type':'application/json'};
+    if(INIT_DATA) headers['X-Init-Data'] = INIT_DATA;
+    const devParam = !INIT_DATA ? '?dev=1' : '';
+    const resp = await fetch(API_URL+'/api/chat'+devParam, {
+      method:'POST', headers,
+      body: JSON.stringify({message: summaryPrompt, state: S})
+    });
+    const data = await resp.json();
+    typing.remove();
+    aiAddMsg(data.message||'...', 'bot');
+  } catch(e) {
+    typing.remove();
+    aiAddMsg('Ошибка связи 😕', 'bot');
+  }
+  if(btn){ btn.disabled=false; btn.style.opacity='1'; }
 }
 
 async function executeAIActions(actions){
