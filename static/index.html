@@ -289,8 +289,17 @@ select.inp option{background:var(--bg);}
 .event-date{font-size:11px;color:var(--hint);margin-top:1px;}
 .event-del{background:none;border:none;color:var(--hint);cursor:pointer;font-size:16px;padding:0 2px;}
 /* Day Summary Button */
-.day-summary-btn{width:100%;display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--accent) 0%,#7F77DD 100%);color:#fff;border:none;border-radius:var(--r);padding:16px 18px;cursor:pointer;margin-bottom:16px;text-align:left;font-family:inherit;transition:opacity .15s,transform .1s;}
+.day-summary-btn{width:100%;display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--accent) 0%,#7F77DD 100%);color:#fff;border:none;border-radius:var(--r);padding:16px 18px;cursor:pointer;margin:20px 0 16px;text-align:left;font-family:inherit;transition:opacity .15s,transform .1s;}
 .day-summary-btn:active{opacity:.85;transform:scale(.98);}
+/* Summaries archive */
+.summary-card{background:var(--bg2);border-radius:var(--r);margin-bottom:10px;overflow:hidden;}
+.summary-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;gap:8px;}
+.summary-date{font-size:13px;font-weight:700;}
+.summary-preview{font-size:12px;color:var(--hint);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 8px;}
+.summary-toggle{font-size:12px;color:var(--hint);flex-shrink:0;}
+.summary-body{padding:0 16px 14px;font-size:13px;line-height:1.6;color:var(--text);display:none;}
+.summary-body.open{display:block;}
+.summary-del{background:none;border:none;color:var(--hint);cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0;}
 /* Notes */
 .notes-section{margin-bottom:16px;}
 .notes-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
@@ -633,6 +642,22 @@ select.inp option{background:var(--bg);}
   <div class="chart-wrap">
     <canvas id="chart" role="img" aria-label="Расходы и доходы по дням цикла"></canvas>
   </div>
+
+  <!-- DAY SUMMARY BUTTON -->
+  <button class="day-summary-btn" id="day-summary-btn" onclick="openDaySummary()">
+    <span style="font-size:20px;">📊</span>
+    <div>
+      <div style="font-size:15px;font-weight:700;">Итог дня</div>
+      <div style="font-size:12px;opacity:.7;margin-top:1px;">Полный отчёт от Grok → в архив</div>
+    </div>
+    <span style="margin-left:auto;font-size:18px;opacity:.5;">›</span>
+  </button>
+
+  <!-- SUMMARIES ARCHIVE -->
+  <div id="summaries-section" style="display:none;">
+    <div class="sec" style="margin-top:4px;">Архив итогов</div>
+    <div id="summaries-list"></div>
+  </div>
 </div>
 
 <!-- PLAN -->
@@ -787,16 +812,6 @@ select.inp option{background:var(--bg);}
   </div>
 
   <div id="scope-list"></div>
-
-  <!-- DAY SUMMARY BUTTON -->
-  <button class="day-summary-btn" id="day-summary-btn" onclick="openDaySummary()">
-    <span style="font-size:20px;">📊</span>
-    <div>
-      <div style="font-size:15px;font-weight:700;">Итог дня</div>
-      <div style="font-size:12px;opacity:.7;margin-top:1px;">Полный отчёт от Grok</div>
-    </div>
-    <span style="margin-left:auto;font-size:18px;opacity:.5;">›</span>
-  </button>
 
   <button class="mbtn" onclick="toggleAP()" id="ap-btn" style="background:var(--bg2);color:var(--text);border:none;width:100%;padding:12px;font-size:14px;font-weight:600;border-radius:var(--rsm);margin-bottom:8px;">+ Добавить цель</button>
   <div class="ap gone" id="ap-form">
@@ -1256,6 +1271,7 @@ function initG(){
   if(!S.g.quarter)S.g.quarter=[];
   if(!S.g.habitLinks)S.g.habitLinks={};
   if(!S.g.notes)S.g.notes=[];
+  if(!S.g.summaries)S.g.summaries=[];
   // Seed default week goals if not yet added
   if(!S.g.week)S.g.week=[];
   const wids=S.g.week.map(x=>x.id);
@@ -1896,6 +1912,7 @@ function renderGoals(){
   renderDailyVerse();
   renderTodayFocus();
   renderNotes();
+  renderSummaries();
   renderEvents();
 }
 
@@ -2015,6 +2032,51 @@ function renderNotes(){
       <button class="note-del" onclick="deleteNote(${n.id})">×</button>
     </div>`
   ).join('');
+}
+
+// ── Summaries archive ─────────────────────────────────────────────────────────
+function saveSummary(date, text){
+  if(!S.g.summaries) S.g.summaries=[];
+  // Replace existing summary for same date
+  S.g.summaries = S.g.summaries.filter(s=>s.date!==date);
+  S.g.summaries.unshift({id:Date.now(), date, text});
+  // Keep last 60 days
+  if(S.g.summaries.length>60) S.g.summaries=S.g.summaries.slice(0,60);
+  saveS();
+  renderSummaries();
+}
+
+function renderSummaries(){
+  const section = document.getElementById('summaries-section');
+  const el = document.getElementById('summaries-list');
+  if(!el) return;
+  const list = S.g?.summaries||[];
+  section.style.display = list.length ? 'block' : 'none';
+  el.innerHTML = list.map((s,i)=>{
+    const preview = s.text.replace(/\n/g,' ').slice(0,60)+'…';
+    const bodyId = 'sumbody-'+s.id;
+    return `<div class="summary-card">
+      <div class="summary-hdr" onclick="toggleSummary('${bodyId}',this)">
+        <div class="summary-date">📊 ${s.date}</div>
+        <div class="summary-preview">${preview}</div>
+        <span class="summary-toggle">▼</span>
+        <button class="summary-del" onclick="event.stopPropagation();deleteSummary(${s.id})">×</button>
+      </div>
+      <div class="summary-body" id="${bodyId}">${s.text.replace(/\n/g,'<br>')}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleSummary(bodyId, hdr){
+  const body = document.getElementById(bodyId);
+  const icon = hdr.querySelector('.summary-toggle');
+  const open = body.classList.toggle('open');
+  if(icon) icon.textContent = open ? '▲' : '▼';
+}
+
+function deleteSummary(id){
+  S.g.summaries = (S.g.summaries||[]).filter(s=>s.id!==id);
+  saveS(); renderSummaries();
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -2282,7 +2344,10 @@ ${noteLines.join('\n')||'нет'}
     });
     const data = await resp.json();
     typing.remove();
-    aiAddMsg(data.message||'...', 'bot');
+    const summaryText = data.message||'...';
+    aiAddMsg(summaryText, 'bot');
+    // Save to archive
+    saveSummary(today, summaryText);
   } catch(e) {
     typing.remove();
     aiAddMsg('Ошибка связи 😕', 'bot');
