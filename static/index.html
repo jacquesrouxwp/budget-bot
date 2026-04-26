@@ -848,6 +848,7 @@ select.inp option{background:var(--bg);}
   <div class="ai-hdr">
     <div style="font-size:22px;">🤖</div>
     <div class="ai-hdr-title">Ассистент</div>
+    <button onclick="clearAIHistory()" style="background:none;border:none;font-size:12px;cursor:pointer;color:var(--hint);padding:4px 8px;border-radius:8px;border:1px solid rgba(128,128,128,.2);" title="Очистить историю">🗑 Очистить</button>
     <button onclick="closeAI()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--hint);">×</button>
   </div>
   <div class="ai-messages" id="ai-messages">
@@ -1272,6 +1273,7 @@ function initG(){
   if(!S.g.habitLinks)S.g.habitLinks={};
   if(!S.g.notes)S.g.notes=[];
   if(!S.g.summaries)S.g.summaries=[];
+  if(!S.g.chatHistory)S.g.chatHistory=[];
   // Seed default week goals if not yet added
   if(!S.g.week)S.g.week=[];
   const wids=S.g.week.map(x=>x.id);
@@ -2179,11 +2181,31 @@ function toggleVoice(){
 
 // ── AI Assistant ──────────────────────────────────────────────────────────────
 function openAI(){
-  document.getElementById('ai-modal').classList.remove('gone');
+  const modal = document.getElementById('ai-modal');
+  modal.classList.remove('gone');
+  // Restore history into chat on first open
+  const box = document.getElementById('ai-messages');
+  if(box && box.dataset.loaded !== '1'){
+    box.dataset.loaded = '1';
+    const hist = S.g?.chatHistory || [];
+    hist.forEach(h => {
+      if(h.role === 'user') aiAddMsg(h.content, 'user');
+      else if(h.role === 'assistant') aiAddMsg(h.content, 'bot');
+    });
+  }
   document.getElementById('ai-inp').focus();
 }
 function closeAI(){
   document.getElementById('ai-modal').classList.add('gone');
+}
+function clearAIHistory(){
+  if(!confirm('Очистить историю чата?')) return;
+  S.g.chatHistory = [];
+  saveS();
+  const box = document.getElementById('ai-messages');
+  box.innerHTML = '';
+  box.dataset.loaded = '1';
+  aiAddMsg('Привет! Скажи что сделать — отмечу чеклист, добавлю задачу или напомню о целях 🎯', 'bot');
 }
 
 function aiAddMsg(text, role, actionsText){
@@ -2202,6 +2224,13 @@ function aiAddMsg(text, role, actionsText){
   return div;
 }
 
+function _saveToHistory(role, content){
+  if(!S.g.chatHistory) S.g.chatHistory = [];
+  S.g.chatHistory.push({role, content});
+  if(S.g.chatHistory.length > 20) S.g.chatHistory = S.g.chatHistory.slice(-20);
+  saveS();
+}
+
 async function sendAI(){
   const inp = document.getElementById('ai-inp');
   const msg = inp.value.trim();
@@ -2209,6 +2238,7 @@ async function sendAI(){
   inp.value = '';
 
   aiAddMsg(msg, 'user');
+  _saveToHistory('user', msg);
 
   const typing = aiAddMsg('...', 'bot typing');
 
@@ -2220,7 +2250,7 @@ async function sendAI(){
     const resp = await fetch(API_URL + '/api/chat' + devParam, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message: msg, state: S })
+      body: JSON.stringify({ message: msg, state: S, history: S.g.chatHistory.slice(-20) })
     });
     const data = await resp.json();
 
@@ -2228,8 +2258,10 @@ async function sendAI(){
 
     const actions = data.actions || [];
     const done = await executeAIActions(actions);
+    const botText = data.message || '...';
 
-    aiAddMsg(data.message || '...', 'bot', done.length ? '✓ ' + done.join(', ') : '');
+    aiAddMsg(botText, 'bot', done.length ? '✓ ' + done.join(', ') : '');
+    _saveToHistory('assistant', botText);
 
   } catch(e) {
     typing.remove();

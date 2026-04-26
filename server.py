@@ -324,6 +324,7 @@ async def chat_assistant(request: Request):
     message = body.get("message", "")
     state   = body.get("state", {}) or {}
     g       = state.get("g", {}) or {}
+    history = body.get("history", []) or []
 
     # Finance state (root-level S object)
     fin_card  = state.get("card", 0)
@@ -521,18 +522,36 @@ actions может быть []. Только реальные действия �
                 headers={"Authorization": f"Bearer {XAI_API_KEY}","Content-Type":"application/json"},
                 json={
                     "model": "grok-4-fast-non-reasoning",
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user",   "content": message}
-                    ],
+                    "messages": (
+                        [{"role": "system", "content": system}] +
+                        [{"role": h["role"], "content": h["content"]} for h in history[-18:] if h.get("role") in ("user","assistant")] +
+                        [{"role": "user", "content": message}]
+                    ),
                     "temperature": 0.3,
                     "max_tokens": 900
                 }
             )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"].strip()
-            content = re.sub(r'^```json\s*|\s*```$', '', content)
-            result  = json.loads(content)
+            if resp.status_code != 200:
+                log.error("Grok HTTP %s: %s", resp.status_code, resp.text[:500])
+                return JSONResponse({"ok": False, "message": f"Grok API error {resp.status_code}", "actions": []})
+            raw = resp.text
+            if not raw.strip():
+                log.error("Grok empty response")
+                return JSONResponse({"ok": False, "message": "Пустой ответ от Grok", "actions": []})
+            rj = resp.json()
+            content = (rj.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            content = content.strip()
+            log.info("Grok raw content: %r", content[:200])
+            if not content:
+                finish = (rj.get("choices") or [{}])[0].get("finish_reason","")
+                log.error("Grok empty content, finish_reason=%s", finish)
+                return JSONResponse({"ok": False, "message": "Grok вернул пустой ответ", "actions": []})
+            content = re.sub(r'^```json\s*|\s*```$', '', content.strip())
+            # Try JSON parse; if model returned plain text — wrap it
+            try:
+                result = json.loads(content)
+            except Exception:
+                result = {"message": content, "actions": []}
             return JSONResponse({"ok": True, **result})
     except Exception as e:
         log.error("Grok error: %s", e)
