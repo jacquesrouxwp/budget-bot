@@ -280,6 +280,24 @@ select.inp option{background:var(--bg);}
 .dfocus-name{font-size:15px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .dfocus-prog{font-size:11px;color:var(--hint);margin-top:2px;}
 .dfocus-pct{font-size:22px;font-weight:700;letter-spacing:-.02em;flex-shrink:0;}
+/* Events strip */
+.events-strip{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+.event-item{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:var(--rsm);padding:10px 12px;}
+.event-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;}
+.event-body{flex:1;min-width:0;}
+.event-title{font-size:13px;font-weight:600;color:var(--ink);}
+.event-date{font-size:11px;color:var(--hint);margin-top:1px;}
+.event-del{background:none;border:none;color:var(--hint);cursor:pointer;font-size:16px;padding:0 2px;}
+/* Notes */
+.notes-section{margin-bottom:16px;}
+.notes-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.note-item{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:var(--bg2);border-radius:var(--rsm);margin-bottom:6px;}
+.note-cat{font-size:16px;flex-shrink:0;}
+.note-body{flex:1;min-width:0;}
+.note-text{font-size:13px;color:var(--ink);line-height:1.4;}
+.note-meta{font-size:10px;color:var(--hint);margin-top:3px;}
+.note-del{background:none;border:none;color:var(--hint);cursor:pointer;font-size:16px;padding:0 2px;flex-shrink:0;}
+.note-empty{font-size:12px;color:var(--hint);padding:8px 0;text-align:center;}
 .gtable{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px;}
 .gcol{background:var(--bg2);border-radius:var(--rsm);padding:10px 8px;min-width:0;}
 .gcol-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:4px;display:flex;flex-direction:column;gap:2px;}
@@ -690,9 +708,32 @@ select.inp option{background:var(--bg);}
   <!-- TODAY'S FOCUS -->
   <div class="dfocus" id="d-focus"></div>
 
+  <!-- UPCOMING EVENTS -->
+  <div id="events-strip" class="events-strip" style="display:none;"></div>
+
   <!-- GOAL TABLE -->
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);margin-bottom:8px;">Фронт целей</div>
   <div class="gtable" id="goal-table"></div>
+
+  <!-- NOTES -->
+  <div class="notes-section">
+    <div class="notes-hdr">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint);display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="toggleNotes()">
+        <span>Заметки</span>
+        <span id="notes-toggle-icon" style="font-size:12px;color:var(--hint);">▲</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select id="notes-cat-filter" style="background:var(--bg2);border:none;color:var(--hint);font-size:11px;border-radius:6px;padding:2px 6px;cursor:pointer;" onchange="renderNotes()">
+          <option value="">Все</option>
+          <option value="idea">💡 Идеи</option>
+          <option value="prayer">🙏 Молитва</option>
+          <option value="plan">📝 Планы</option>
+          <option value="other">📌 Прочее</option>
+        </select>
+      </div>
+    </div>
+    <div id="notes-list"></div>
+  </div>
 
   <div class="dtab" id="dtab" style="display:flex;gap:8px;padding:0 4px;position:relative;">
     <button class="on" id="dtab-today" onclick="setDay('today',this)">Сегодня</button>
@@ -1201,6 +1242,7 @@ function initG(){
   if(!S.g.hiddenHabs)S.g.hiddenHabs=[];
   if(!S.g.quarter)S.g.quarter=[];
   if(!S.g.habitLinks)S.g.habitLinks={};
+  if(!S.g.notes)S.g.notes=[];
   // Seed default week goals if not yet added
   if(!S.g.week)S.g.week=[];
   const wids=S.g.week.map(x=>x.id);
@@ -1840,6 +1882,8 @@ function renderGoals(){
   renderGoalTable();
   renderDailyVerse();
   renderTodayFocus();
+  renderNotes();
+  renderEvents();
 }
 
 function renderScope(){
@@ -1889,6 +1933,7 @@ async function init(){
   document.getElementById('i-date').value=ts();
 
   await loadS(); // load from DB (or localStorage fallback)
+  loadEvents();  // load upcoming events from server
 
   const q=getQ();
   document.getElementById('q-text').textContent=q.q;
@@ -1913,6 +1958,113 @@ document.addEventListener('click',function(e){
     }
   }
 });
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+const NOTE_ICONS = {idea:'💡', prayer:'🙏', plan:'📝', other:'📌'};
+const NOTE_LABELS = {idea:'Идея', prayer:'Молитва', plan:'План', other:'Заметка'};
+let _notesOpen = true;
+
+function toggleNotes(){
+  _notesOpen = !_notesOpen;
+  document.getElementById('notes-list').style.display = _notesOpen ? '' : 'none';
+  document.getElementById('notes-toggle-icon').style.transform = _notesOpen ? '' : 'rotate(180deg)';
+}
+
+function addNote(text, category='other'){
+  if(!S.g.notes) S.g.notes=[];
+  const note = {id: Date.now(), text, category, date: dk(0)};
+  S.g.notes.unshift(note);
+  saveS(); renderNotes();
+  return note;
+}
+
+function deleteNote(id){
+  S.g.notes = (S.g.notes||[]).filter(n=>n.id!==id);
+  saveS(); renderNotes();
+}
+
+function renderNotes(){
+  const el = document.getElementById('notes-list');
+  if(!el) return;
+  const filter = document.getElementById('notes-cat-filter')?.value || '';
+  const notes = (S.g?.notes||[]).filter(n => !filter || n.category===filter);
+  if(notes.length===0){
+    el.innerHTML='<div class="note-empty">Заметок нет — скажи Groку: "запиши идею..."</div>';
+    return;
+  }
+  el.innerHTML = notes.map(n =>
+    `<div class="note-item">
+      <div class="note-cat">${NOTE_ICONS[n.category]||'📌'}</div>
+      <div class="note-body">
+        <div class="note-text">${n.text}</div>
+        <div class="note-meta">${NOTE_LABELS[n.category]||'Заметка'} · ${n.date||''}</div>
+      </div>
+      <button class="note-del" onclick="deleteNote(${n.id})">×</button>
+    </div>`
+  ).join('');
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+let _cachedEvents = [];
+
+async function loadEvents(){
+  try {
+    const devParam = !INIT_DATA ? '?dev=1' : '';
+    const headers = {};
+    if(INIT_DATA) headers['X-Init-Data'] = INIT_DATA;
+    const r = await fetch(API_URL+'/api/events'+devParam, {headers});
+    if(r.ok) _cachedEvents = await r.json();
+  } catch(e){ /* offline */ }
+  renderEvents();
+}
+
+async function saveEvent(title, date, time='', notif=true){
+  try {
+    const devParam = !INIT_DATA ? '?dev=1' : '';
+    const headers = {'Content-Type':'application/json'};
+    if(INIT_DATA) headers['X-Init-Data'] = INIT_DATA;
+    const r = await fetch(API_URL+'/api/event'+devParam, {
+      method:'POST', headers,
+      body: JSON.stringify({title, date, time, notif})
+    });
+    const data = await r.json();
+    if(data.ok){ await loadEvents(); return data.id; }
+  } catch(e){ /* offline */ }
+}
+
+async function deleteEvent(id){
+  try {
+    const devParam = !INIT_DATA ? '?dev=1' : '';
+    const headers = {};
+    if(INIT_DATA) headers['X-Init-Data'] = INIT_DATA;
+    await fetch(API_URL+'/api/event/'+id+devParam, {method:'DELETE', headers});
+    _cachedEvents = _cachedEvents.filter(e=>e.id!==id);
+    renderEvents();
+  } catch(e){}
+}
+
+function renderEvents(){
+  const el = document.getElementById('events-strip');
+  if(!el) return;
+  const today = dk(0);
+  const upcoming = _cachedEvents.filter(e => e.event_date >= today).slice(0,5);
+  if(upcoming.length===0){ el.style.display='none'; return; }
+  el.style.display='flex';
+  const MS=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  el.innerHTML = upcoming.map(e => {
+    const d = new Date(e.event_date+'T12:00:00');
+    const dateStr = d.getDate()+' '+MS[d.getMonth()]+(e.event_time?' · '+e.event_time:'');
+    const isToday = e.event_date===today;
+    return `<div class="event-item">
+      <div class="event-dot" style="background:${isToday?'var(--red)':'var(--accent)'};"></div>
+      <div class="event-body">
+        <div class="event-title">${e.title}</div>
+        <div class="event-date">${isToday?'📅 Сегодня':dateStr}</div>
+      </div>
+      <button class="event-del" onclick="deleteEvent(${e.id})">×</button>
+    </div>`;
+  }).join('');
+}
 
 // ── Voice Input ──────────────────────────────────────────────────────────────
 let _recognition = null;
@@ -2032,6 +2184,12 @@ async function executeAIActions(actions){
         const list = a.scope==='week'?S.g.week:a.scope==='month'?S.g.month:a.scope==='quarter'?(S.g.quarter||[]):S.g.big;
         const g = list.find(x=>x.id===a.id);
         if(g){ g.current = Math.max(0, Math.min(g.target, (g.current||0) + (a.delta||1))); done.push('↑ ' + g.name); }
+      } else if(a.type === 'addNote'){
+        addNote(a.text, a.category||'other');
+        done.push((NOTE_ICONS[a.category]||'📌') + ' ' + a.text.slice(0,30));
+      } else if(a.type === 'addEvent'){
+        await saveEvent(a.title, a.date, a.time||'', a.notif!==false);
+        done.push('📅 ' + a.title + ' ' + a.date);
       }
     } catch(e){ /* skip broken action */ }
   }

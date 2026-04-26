@@ -3,6 +3,14 @@ Budget Bot — FastAPI backend
 Handles: API state save/load, Telegram webhook, serves static Mini App
 """
 import os, json, hmac, hashlib, sqlite3, logging, re
+# Load .env if present (local dev)
+_env_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(_env_path):
+    for _line in open(_env_path):
+        _line = _line.strip()
+        if _line and not _line.startswith('#') and '=' in _line:
+            _k, _v = _line.split('=', 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 from contextlib import contextmanager
 from urllib.parse import parse_qsl
 from datetime import datetime
@@ -60,6 +68,17 @@ def init_db():
                 PRIMARY KEY (user_id, hab_id)
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS user_events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                title       TEXT NOT NULL,
+                event_date  TEXT NOT NULL,
+                event_time  TEXT DEFAULT '',
+                notif       INTEGER DEFAULT 1,
+                created     TEXT DEFAULT (datetime('now'))
+            )
+        """)
         db.commit()
 
 @contextmanager
@@ -97,11 +116,12 @@ def validate_init_data(raw: str) -> dict:
         raise HTTPException(status_code=401, detail="No user in init data")
     return user
 
+DEV_MODE = os.getenv("DEV_MODE", "")
+
 def get_user_from_request(request: Request) -> dict:
     raw = request.headers.get("X-Init-Data", "")
-    # Dev mode: allow ?dev=USER_ID to skip validation
     dev = request.query_params.get("dev")
-    if dev and not BOT_TOKEN:
+    if dev and (not BOT_TOKEN or DEV_MODE):
         return {"id": int(dev), "first_name": "Dev"}
     return validate_init_data(raw)
 
@@ -208,6 +228,83 @@ async def save_notification(request: Request):
     return {"ok": True}
 
 
+# ── Events ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/events")
+async def get_events(request: Request):
+    user = get_user_from_request(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT id, title, event_date, event_time, notif FROM user_events WHERE user_id=? ORDER BY event_date, event_time",
+            (user["id"],)
+        ).fetchall()
+    return JSONResponse([dict(r) for r in rows])
+
+
+@app.post("/api/event")
+async def save_event(request: Request):
+    user = get_user_from_request(request)
+    user_id = user["id"]
+    body = await request.json()
+    title      = body.get("title", "")
+    event_date = body.get("date", "")
+    event_time = body.get("time", "")
+    notif      = 1 if body.get("notif", True) else 0
+    event_id   = body.get("id")  # if updating
+
+    if not title or not event_date:
+        return JSONResponse({"ok": False, "error": "title and date required"})
+
+    with get_db() as db:
+        if event_id:
+            db.execute(
+                "UPDATE user_events SET title=?, event_date=?, event_time=?, notif=? WHERE id=? AND user_id=?",
+                (title, event_date, event_time, notif, event_id, user_id)
+            )
+        else:
+            cur = db.execute(
+                "INSERT INTO user_events (user_id, title, event_date, event_time, notif) VALUES (?,?,?,?,?)",
+                (user_id, title, event_date, event_time, notif)
+            )
+            event_id = cur.lastrowid
+        db.commit()
+
+    # Schedule push notification if requested
+    if notif and BOT_TOKEN and HAS_APScheduler and scheduler and event_date:
+        try:
+            notif_time_str = event_time if event_time else "09:00"
+            h, m = map(int, notif_time_str.split(":"))
+            year, month, day = map(int, event_date.split("-"))
+            from apscheduler.triggers.date import DateTrigger
+            from datetime import datetime as dt
+            run_dt = dt(year, month, day, h, m)
+            job_id = f"event_{user_id}_{event_id}"
+            if run_dt > dt.now():
+                scheduler.add_job(
+                    _send_tg_message,
+                    DateTrigger(run_date=run_dt),
+                    args=[user_id, f"📅 {title}\n\nСобытие сегодня!"],
+                    id=job_id,
+                    replace_existing=True
+                )
+        except Exception as e:
+            log.warning("Could not schedule event notif: %s", e)
+
+    return JSONResponse({"ok": True, "id": event_id})
+
+
+@app.delete("/api/event/{event_id}")
+async def delete_event(event_id: int, request: Request):
+    user = get_user_from_request(request)
+    with get_db() as db:
+        db.execute("DELETE FROM user_events WHERE id=? AND user_id=?", (event_id, user["id"]))
+        db.commit()
+    if HAS_APScheduler and scheduler:
+        try: scheduler.remove_job(f"event_{user['id']}_{event_id}")
+        except: pass
+    return JSONResponse({"ok": True})
+
+
 # ── AI Assistant ─────────────────────────────────────────────────────────────
 
 HAB_NAMES = {
@@ -219,7 +316,7 @@ WD_NAMES = ["","Понедельник","Вторник","Среда","Четв�
 
 @app.post("/api/chat")
 async def chat_assistant(request: Request):
-    get_user_from_request(request)  # auth check
+    user = get_user_from_request(request)
     if not XAI_API_KEY:
         return JSONResponse({"ok": False, "message": "XAI_API_KEY не настроен", "actions": []})
 
@@ -250,6 +347,16 @@ async def chat_assistant(request: Request):
         f"  {g2['name']}: {g2.get('current',0)}/{g2['target']} {g2.get('unit','')} [id:{g2['id']}]"
         for g2 in week_g if g2.get("target", 0) > 0
     ]
+    notes = (g.get("notes") or [])[-10:]  # last 10 notes
+    notes_lines = [f"  [{n.get('id')}] [{n.get('category','?')}] {n.get('text','')}" for n in notes]
+
+    # upcoming events from DB
+    with get_db() as db:
+        ev_rows = db.execute(
+            "SELECT id, title, event_date, event_time FROM user_events WHERE user_id=? AND event_date >= ? ORDER BY event_date LIMIT 5",
+            (user["id"], now.strftime("%Y-%m-%d"))
+        ).fetchall()
+    events_lines = [f"  [{r['id']}] {r['event_date']} {r['event_time']} — {r['title']}" for r in ev_rows]
 
     system = f"""Ты личный ассистент. Пользователь — христианин, работает над долгом и разрабатывает приложение для пасторов.
 Сейчас: {now.strftime('%H:%M')}, {WD_NAMES[now.isoweekday()]}, {now.strftime('%d.%m.%Y')}
@@ -263,14 +370,23 @@ async def chat_assistant(request: Request):
 НЕДЕЛЬНЫЕ ЦЕЛИ:
 {chr(10).join(goals_lines) if goals_lines else 'нет'}
 
+ЗАМЕТКИ (последние):
+{chr(10).join(notes_lines) if notes_lines else 'нет'}
+
+ПРЕДСТОЯЩИЕ СОБЫТИЯ:
+{chr(10).join(events_lines) if events_lines else 'нет'}
+
 Отвечай кратко, по-русски, конкретно. Мотивируй без пафоса.
 Верни ТОЛЬКО JSON (без markdown):
 {{"message":"текст ответа","actions":[
   {{"type":"toggleHab","id":"h3","value":true}},
   {{"type":"toggleTask","index":0,"value":true}},
   {{"type":"addTask","name":"название"}},
-  {{"type":"incGoal","scope":"week","id":101,"delta":1}}
+  {{"type":"incGoal","scope":"week","id":101,"delta":1}},
+  {{"type":"addNote","text":"текст идеи","category":"idea"}},
+  {{"type":"addEvent","title":"Встреча","date":"2025-05-10","time":"14:00","notif":true}}
 ]}}
+Категории заметок: idea (идея), prayer (молитва), plan (план), other.
 actions может быть пустым []. Только реальные действия из запроса."""
 
     try:
