@@ -43,7 +43,7 @@ app = FastAPI(title="Budget Bot API", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -77,6 +77,23 @@ def init_db():
                 event_time  TEXT DEFAULT '',
                 notif       INTEGER DEFAULT 1,
                 created     TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS finplan_state (
+                user_id  INTEGER PRIMARY KEY,
+                state    TEXT NOT NULL DEFAULT '{}',
+                updated  TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS finplan_notifs (
+                user_id     INTEGER,
+                block_id    TEXT,
+                block_label TEXT,
+                notif_time  TEXT,
+                mins_before INTEGER DEFAULT 5,
+                PRIMARY KEY (user_id, block_id)
             )
         """)
         db.commit()
@@ -272,7 +289,9 @@ async def save_event(request: Request):
     # Schedule push notification if requested
     if notif and BOT_TOKEN and HAS_APScheduler and scheduler and event_date:
         try:
-            notif_time_str = event_time if event_time else "09:00"
+            # Handle "HH:MM" or "HH:MM-HH:MM" (time range) — only use start time
+            raw_time = event_time if event_time else "09:00"
+            notif_time_str = raw_time.split("-")[0].strip() if "-" in raw_time else raw_time
             h, m = map(int, notif_time_str.split(":"))
             year, month, day = map(int, event_date.split("-"))
             from apscheduler.triggers.date import DateTrigger
@@ -316,7 +335,8 @@ async def toggle_event_notif(event_id: int, request: Request):
             try:
                 from apscheduler.triggers.date import DateTrigger
                 from datetime import datetime as dt
-                t = row["event_time"] or "09:00"
+                raw_t = row["event_time"] or "09:00"
+                t = raw_t.split("-")[0].strip() if "-" in raw_t else raw_t
                 h, m = map(int, t.split(":"))
                 y, mo, d = map(int, row["event_date"].split("-"))
                 run_dt = dt(y, mo, d, h, m)
@@ -509,8 +529,11 @@ async def chat_assistant(request: Request):
 ЗАМЕТКИ — мысли/идеи/молитвы/планы:
 - Сохранить → addNote (category: idea/prayer/plan/other) | Удалить → deleteNote (id)
 
-СОБЫТИЯ — встречи с датой и временем:
+СОБЫТИЯ — встречи, смены, рабочие часы, встречи с конкретным временем:
 - Добавить → addEvent | Удалить → deleteEvent (id)
+- ВАЖНО: если пользователь говорит "работаю сегодня с 19:00 до 03:00" или "добавь смену", "добавь работу" С УКАЗАНИЕМ ВРЕМЕНИ — это addEvent, а НЕ toggleHab!
+  Пример: "работа сегодня с 19:00 до 03:00" → addEvent title="Работа 19:00–03:00" date="{today_k}" time="19:00"
+  Просто "отметь работу" или "выполнил работу" без времени → toggleHab id:h4
 
 ФИНАНСЫ:
 - Расход → addExpense | Доход → addIncome | Удалить операцию → deleteTx (id, txType: exp/inc)
@@ -594,6 +617,105 @@ actions может быть []. Только реальные действия �
         return JSONResponse({"ok": False, "message": "Ошибка связи с ассистентом 😕", "actions": []})
 
 
+# ── Finplan ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/finplan")
+async def get_finplan(request: Request):
+    user = get_user_from_request(request)
+    with get_db() as db:
+        row = db.execute(
+            "SELECT state FROM finplan_state WHERE user_id=?", (user["id"],)
+        ).fetchone()
+    return JSONResponse(json.loads(row["state"]) if row else {})
+
+
+@app.post("/api/finplan")
+async def save_finplan(request: Request):
+    user = get_user_from_request(request)
+    body = await request.json()
+    state_str = json.dumps(body, ensure_ascii=False)
+    with get_db() as db:
+        db.execute("""
+            INSERT INTO finplan_state (user_id, state, updated)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                state=excluded.state, updated=excluded.updated
+        """, (user["id"], state_str))
+        db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/finplan/notify")
+async def set_finplan_notifs(request: Request):
+    """Set schedule-block notifications. Body: [{blockId, label, time, minsBefore}]."""
+    user = get_user_from_request(request)
+    user_id = user["id"]
+    rules: list = await request.json()
+
+    if not BOT_TOKEN:
+        return JSONResponse({"ok": False, "error": "BOT_TOKEN not set"})
+
+    # Clear existing rules for this user
+    with get_db() as db:
+        db.execute("DELETE FROM finplan_notifs WHERE user_id=?", (user_id,))
+        for r in rules:
+            block_id = r.get("blockId", "")
+            label    = r.get("label", "Блок")
+            raw_time = r.get("time", "")       # "HH:MM"
+            mins_b   = int(r.get("minsBefore", 5))
+            if not block_id or not raw_time:
+                continue
+            # Calculate actual notification time (start_time - minsBefore)
+            try:
+                h, m = map(int, raw_time.split(":"))
+                total = h * 60 + m - mins_b
+                if total < 0: total += 24 * 60
+                notif_time = f"{total // 60:02d}:{total % 60:02d}"
+            except Exception:
+                notif_time = raw_time
+            db.execute("""
+                INSERT INTO finplan_notifs (user_id, block_id, block_label, notif_time, mins_before)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, block_id, label, notif_time, mins_b))
+        db.commit()
+
+    # Re-register all cron jobs for this user
+    if HAS_APScheduler and scheduler:
+        # Remove old finplan jobs for user
+        for job in scheduler.get_jobs():
+            if job.id.startswith(f"fp_{user_id}_"):
+                try: scheduler.remove_job(job.id)
+                except: pass
+        # Add new jobs
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT block_id, block_label, notif_time FROM finplan_notifs WHERE user_id=?",
+                (user_id,)
+            ).fetchall()
+        for row in rows:
+            try:
+                h, m = map(int, row["notif_time"].split(":"))
+                job_id = f"fp_{user_id}_{row['block_id']}"
+                scheduler.add_job(
+                    _send_tg_message,
+                    CronTrigger(hour=h, minute=m),
+                    args=[user_id, f"⏰ Финплан: {row['block_label']}\nНачинается скоро!"],
+                    id=job_id,
+                    replace_existing=True,
+                )
+            except Exception as e:
+                log.warning("fp notif job error: %s", e)
+
+    return {"ok": True, "count": len(rules)}
+
+
+@app.get("/api/finplan/me")
+async def finplan_me(request: Request):
+    """Return current user info (useful for finding your Telegram user_id)."""
+    user = get_user_from_request(request)
+    return JSONResponse({"id": user["id"], "name": user.get("first_name", ""), "username": user.get("username", "")})
+
+
 # ── Telegram webhook ──────────────────────────────────────────────────────────
 
 @app.post(WEBHOOK_PATH)
@@ -635,7 +757,26 @@ async def startup():
                     )
                 except Exception as e:
                     log.warning("Could not restore notif job: %s", e)
-        log.info("Scheduler started, %d jobs loaded", len(rows))
+        log.info("Scheduler started, %d habit jobs loaded", len(rows))
+        # Restore finplan schedule notifications
+        with get_db() as db:
+            fp_rows = db.execute(
+                "SELECT user_id, block_id, block_label, notif_time FROM finplan_notifs"
+            ).fetchall()
+        for row in fp_rows:
+            try:
+                h, m = map(int, row["notif_time"].split(":"))
+                job_id = f"fp_{row['user_id']}_{row['block_id']}"
+                scheduler.add_job(
+                    _send_tg_message,
+                    CronTrigger(hour=h, minute=m),
+                    args=[row["user_id"], f"⏰ Финплан: {row['block_label']}\nНачинается скоро!"],
+                    id=job_id,
+                    replace_existing=True,
+                )
+            except Exception as e:
+                log.warning("fp notif restore error: %s", e)
+        log.info("Restored %d finplan notif jobs", len(fp_rows))
     else:
         log.warning("APScheduler not installed — push notifications disabled")
 

@@ -12,7 +12,7 @@ services:
       - key: XAI_API_KEY
         sync: false
       - key: DB_PATH
-        value: budget.db
+        value: /data/budget.db
     disk:
       name: budget-db
       mountPath: /data
