@@ -6,7 +6,8 @@ import os, json, logging, asyncio
 import httpx
 
 BOT_TOKEN   = os.getenv("BOT_TOKEN", "")
-WEBAPP_URL  = os.getenv("WEBAPP_URL", "https://your-domain.com")
+WEBAPP_URL  = os.getenv("WEBAPP_URL", "https://budget-bot.xful.onrender.com")
+FINPLAN_URL = WEBAPP_URL.rstrip("/") + "/finplan/"
 API_BASE    = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ async def handle_update(data: dict):
 
     if text.startswith("/start"):
         await cmd_start(chat_id, message.get("from", {}))
+    elif text.startswith("/id"):
+        await cmd_id(chat_id, message.get("from", {}))
     elif text.startswith("/help"):
         await cmd_help(chat_id)
     elif text.startswith("/stats"):
@@ -38,24 +41,29 @@ async def handle_update(data: dict):
 
 
 async def cmd_start(chat_id: int, user: dict):
-    name = user.get("first_name", "друг")
+    name = user.get("first_name", "jacqro")
     keyboard = {
         "inline_keyboard": [[{
-            "text": "💰 Открыть бюджет",
-            "web_app": {"url": WEBAPP_URL}
+            "text": "📊 Финплан",
+            "web_app": {"url": FINPLAN_URL}
         }]]
     }
     await send_message(
         chat_id,
-        f"Привет, <b>{name}</b>! 👋\n\n"
-        f"Твой личный финансовый трекер:\n"
-        f"• Расходы и доходы по дням\n"
-        f"• Прогресс погашения долга\n"
-        f"• Привычки и чеклисты\n"
-        f"• Цели на неделю / месяц\n\n"
-        f"Все данные сохраняются в базе — история не сбрасывается 🔒",
+        f"Привет, <b>{name}</b>! 💰\n\n"
+        f"Финансовый планировщик:\n"
+        f"• Долг €15 000 — прогресс и прогноз\n"
+        f"• Дневной бюджет с переносом\n"
+        f"• Расписание дня (05:00–21:00)\n"
+        f"• Цели и задачи\n\n"
+        f"Данные сохраняются в базе 🔒",
         keyboard
     )
+
+
+async def cmd_id(chat_id: int, user: dict):
+    uid = user.get("id", chat_id)
+    await send_message(chat_id, f"Твой Telegram ID: <code>{uid}</code>")
 
 
 async def cmd_help(chat_id: int):
