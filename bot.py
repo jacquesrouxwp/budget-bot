@@ -63,7 +63,12 @@ async def cmd_start(chat_id: int, user: dict):
 
 async def cmd_id(chat_id: int, user: dict):
     uid = user.get("id", chat_id)
-    await send_message(chat_id, f"Твой Telegram ID: <code>{uid}</code>")
+    await send_message(
+        chat_id,
+        f"ID этого чата: <code>{chat_id}</code>\n"
+        f"Твой личный Telegram ID: <code>{uid}</code>\n\n"
+        f"Для групповых напоминаний нужен именно <b>ID этого чата</b>."
+    )
 
 
 async def cmd_help(chat_id: int):

@@ -35,6 +35,8 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
+BIBLE_REMINDER_CHAT_ID = os.getenv("BIBLE_REMINDER_CHAT_ID", "")
+BIBLE_APP_URL = os.getenv("BIBLE_APP_URL", "https://bible-english.vercel.app")
 WEBHOOK_PATH = "/webhook/" + BOT_TOKEN
 DB_PATH      = os.getenv("DB_PATH", "/data/budget.db" if os.path.isdir("/data") else "budget.db")
 XAI_API_KEY  = os.getenv("XAI_API_KEY", "")
@@ -785,6 +787,26 @@ async def startup():
             except Exception as e:
                 log.warning("fp notif restore error: %s", e)
         log.info("Restored %d finplan notif jobs", len(fp_rows))
+
+        # Daily Emmanuil English HUB reminder — 18:00 Europe/Amsterdam, group chat
+        if BOT_TOKEN and BIBLE_REMINDER_CHAT_ID:
+            try:
+                chat_id = int(BIBLE_REMINDER_CHAT_ID)
+                scheduler.add_job(
+                    _send_tg_message,
+                    CronTrigger(hour=18, minute=0, timezone="Europe/Amsterdam"),
+                    args=[chat_id,
+                          "📖 Час англійської по Біблії!\n\n"
+                          "Не забувай пройти сьогодні хоча б один розділ.\n"
+                          f"{BIBLE_APP_URL}"],
+                    id="bible_daily_reminder",
+                    replace_existing=True,
+                )
+                log.info("Bible daily reminder scheduled for chat %s at 18:00 Europe/Amsterdam", chat_id)
+            except Exception as e:
+                log.warning("Could not schedule bible reminder: %s", e)
+        elif BOT_TOKEN:
+            log.info("BIBLE_REMINDER_CHAT_ID not set — daily Bible reminder disabled")
     else:
         log.warning("APScheduler not installed — push notifications disabled")
 
