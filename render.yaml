@@ -11,6 +11,8 @@ services:
         sync: false
       - key: XAI_API_KEY
         sync: false
+      - key: BIBLE_REMINDER_CHAT_ID
+        sync: false
       - key: DB_PATH
         value: /data/budget.db
     disk:
